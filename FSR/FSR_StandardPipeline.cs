@@ -30,7 +30,7 @@ namespace NKLI
         public ComputeShader compute_FSR;
 
         // Render textures
-        public RenderTexture RT_FSR_RenderTarget;
+        private RenderTexture RT_FSR_RenderTarget;
         private RenderTexture RT_Output;
 
         // Render scale
