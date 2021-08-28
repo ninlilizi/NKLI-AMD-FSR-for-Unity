@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: bb91749abefc6aa4dba5b8e39bc64126
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - compute_FSR: {fileID: 7200000, guid: 5443d441ae30b2043a972e109fde1905, type: 3}
+  - RT_FSR_RenderTarget: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
