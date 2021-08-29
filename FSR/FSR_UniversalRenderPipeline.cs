@@ -1,4 +1,4 @@
-﻿// AMD FSR For Unity Standard render pipeline
+﻿// AMD FSR For Unity Universal render pipeline
 
 //Copyright<2021> < Abigail Hocking (aka Ninlilizi) >
 //Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
@@ -18,10 +18,15 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+#if !UNITY_2019_2_OR_NEWER
 using UnityEngine.XR;
+#endif
 
 namespace NKLI
 {
+    /// <summary>
+    /// Render pipeline feature
+    /// </summary>
     public class FSR_UniversalRenderPipeline : ScriptableRendererFeature
     {
         // Shader
@@ -31,14 +36,23 @@ namespace NKLI
         private static RenderTexture RT_FSR_RenderTarget;
         private static RenderTexture RT_Output;
 
-        public class FSRPass : ScriptableRenderPass
-        {
-            public enum RenderTarget
-            {
-                Color,
-                RenderTexture,
-            }
+        // Flags
+        private bool textures_created;
+        private float render_scale_cached;
 
+        // Settings
+        public FSRSettings settings = new FSRSettings();
+        private static FSRSettings fsrSettings;
+
+        // Pass
+        FSRPass fsrPass;
+
+        /// <summary>
+        /// Render pass
+        /// </summary>
+        private class FSRPass : ScriptableRenderPass
+        {
+            // Identifiers
             private RenderTargetIdentifier source { get; set; }
             private RenderTargetHandle destination;
             RenderTargetHandle m_TemporaryIntermediaryTexture;
@@ -52,13 +66,13 @@ namespace NKLI
             }
 
 
-            // Update is called once per frame
-            void LateUpdate()
-            {
-                //Graphics.SetRenderTarget(RT_FSR_RenderTarget.colorBuffer, RT_FSR_RenderTarget.depthBuffer);
-            }
-
-
+            /// <summary>
+            /// Render pass setup
+            /// </summary>
+            /// <param name="renderPassEvent"></param>
+            /// <param name="blitMaterial"></param>
+            /// <param name="blitShaderPassIndex"></param>
+            /// <param name="tag"></param>
             public FSRPass(RenderPassEvent renderPassEvent, Material blitMaterial, int blitShaderPassIndex, string tag)
             {
                 this.renderPassEvent = renderPassEvent;
@@ -66,36 +80,23 @@ namespace NKLI
             }
 
 
+            /// <summary>
+            /// Setup stuff
+            /// </summary>
+            /// <param name="source"></param>
+            /// <param name="destination"></param>
             public void Setup(RenderTargetIdentifier source, RenderTargetHandle destination)
             {
                 this.source = source;
                 this.destination = destination;
             }
 
-            void Render(ScriptableRenderContext context, Camera camera)
-            {
-                /*context.SetupCameraProperties(camera);
 
-                CommandBuffer cameraBuffer = new CommandBuffer()
-                {
-                    name = "FSR"
-                };
-
-                cameraBuffer.SetRenderTarget(
-                    RT_FSR_RenderTarget,
-                    RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store
-                );
-
-                cameraBuffer.SetRenderTarget(RT_FSR_RenderTarget.colorBuffer, RT_FSR_RenderTarget.depthBuffer);
-
-                CameraClearFlags clearFlags = camera.clearFlags;
-
-                context.ExecuteCommandBuffer(cameraBuffer);
-                cameraBuffer.Clear();
-
-                context.Submit();*/
-            }
-
+            /// <summary>
+            /// Processes the effect
+            /// </summary>
+            /// <param name="context"></param>
+            /// <param name="renderingData"></param>
             public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
             {
                 CommandBuffer cmd = CommandBufferPool.Get();
@@ -159,8 +160,8 @@ namespace NKLI
                 }
 
                 Blit(cmd, RT_Output, destination.id);
-                Blit(cmd, RT_FSR_RenderTarget, fsrSettings.render_target);
-                Blit(cmd, RT_Output, fsrSettings.render_output);
+                //Blit(cmd, RT_FSR_RenderTarget, fsrSettings.render_target);
+                //Blit(cmd, RT_Output, fsrSettings.render_output);
 
                 context.ExecuteCommandBuffer(cmd);
                 CommandBufferPool.Release(cmd);
@@ -176,11 +177,12 @@ namespace NKLI
                     cmd.ReleaseTemporaryRT(m_TemporaryIntermediaryTexture.id);
                 }
             }
-
         }
 
 
-        // Start is called before the first frame update
+        /// <summary>
+        /// Initial setup
+        /// </summary>
         public override void Create()
         {
             // Load voxel insertion shader
@@ -188,8 +190,8 @@ namespace NKLI
             if (compute_FSR == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR/FSR'");
 
             fsrSettings = settings;
-            settings.render_target = RT_FSR_RenderTarget;
-            settings.render_output = RT_Output;
+            //settings.render_target = RT_FSR_RenderTarget;
+            //settings.render_output = RT_Output;
 
             fsrPass = new FSRPass(RenderPassEvent.AfterRendering, null, -1, name);
 
@@ -197,13 +199,14 @@ namespace NKLI
         }
 
 
-        private float render_scale_cached;
-
+        /// <summary>
+        /// Settings container
+        /// </summary>
         [System.Serializable]
         public class FSRSettings
         {
-            public RenderTexture render_target;
-            public RenderTexture render_output;
+            //public RenderTexture render_target;
+            //public RenderTexture render_output;
 
             [Range(0.125f, 1)] public float render_scale = 0.75f;
 
@@ -217,21 +220,17 @@ namespace NKLI
 
             public bool sharpening;
             [Range(0, 2)] public float sharpness = 1;
-
         }
-
-        public FSRSettings settings = new FSRSettings();
-        public static FSRSettings fsrSettings;
-
-        FSRPass fsrPass;
 
 
         /// <summary>
         /// Creates render textures
         /// </summary>
+        /// <param name="cam"></param>
         private void CreateRenderTexture(Camera cam)
         {
 
+            // Render target texture
             if (RT_FSR_RenderTarget != null) RT_FSR_RenderTarget.Release();
             float target_width = cam.pixelWidth * fsrSettings.render_scale;
             float target_height = cam.pixelHeight * fsrSettings.render_scale;
@@ -249,8 +248,12 @@ namespace NKLI
             RT_Output.Create();
         }
 
-        private bool textures_created;
 
+        /// <summary>
+        /// Sets up the render pass
+        /// </summary>
+        /// <param name="renderer"></param>
+        /// <param name="renderingData"></param>
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
             // If the render scale has changed we must recreate our textures
@@ -261,11 +264,12 @@ namespace NKLI
                 CreateRenderTexture(renderingData.cameraData.camera);
             }
 
+            // We must render into a texture
             renderingData.cameraData.targetTexture = RT_FSR_RenderTarget;
             Graphics.SetRenderTarget(RT_FSR_RenderTarget.colorBuffer, RT_FSR_RenderTarget.depthBuffer);
 
+            // Setup pass
             RenderTargetHandle dest = RenderTargetHandle.CameraTarget;
-
             fsrPass.Setup(RT_FSR_RenderTarget, dest);
             renderer.EnqueuePass(fsrPass);
         }
