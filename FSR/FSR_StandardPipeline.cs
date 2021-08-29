@@ -27,6 +27,8 @@ namespace NKLI
     {
         // Cache local camera
         private Camera attached_camera;
+        private Camera render_camera;
+        private GameObject render_camera_gameObject;
 
         // Shader
         public ComputeShader compute_FSR;
@@ -34,6 +36,10 @@ namespace NKLI
         // Render textures
         private RenderTexture RT_FSR_RenderTarget;
         private RenderTexture RT_Output;
+
+        // Cached camera flags
+        private int cached_culling_mask;
+        private CameraClearFlags cached_clear_flags;
 
         // Render scale
         [Range(0.25f, 1)] public float render_scale = 0.75f;
@@ -63,11 +69,23 @@ namespace NKLI
 
             // Create textures
             CreateRenderTexture();
+
+            // Create render camera
+            render_camera_gameObject = new GameObject("FSR_Render_Camera");
+            render_camera_gameObject.transform.parent = transform;
+            render_camera_gameObject.transform.localPosition = Vector3.zero;
+            render_camera_gameObject.transform.localRotation = Quaternion.identity;
+            render_camera_gameObject.hideFlags = HideFlags.HideAndDontSave;
+            render_camera = render_camera_gameObject.AddComponent<Camera>();
+            render_camera.gameObject.SetActive(true);
         }
 
 
         private void OnDisable()
         {
+            // Destroy render camera
+            DestroyImmediate(render_camera_gameObject);
+
             // Dispose render target
             if (RT_FSR_RenderTarget != null) RT_FSR_RenderTarget.Release();
             if (RT_Output != null) RT_Output.Release();
@@ -98,8 +116,7 @@ namespace NKLI
         }
 
 
-        // Update is called once per frame
-        void LateUpdate()
+        private void Update()
         {
             // If the render scale has changed we must recreate our textures
             if (render_scale != render_scale_cached)
@@ -107,18 +124,41 @@ namespace NKLI
                 render_scale_cached = render_scale;
                 CreateRenderTexture();
             }
+        }
 
-            attached_camera.targetTexture = RT_FSR_RenderTarget;
-            Graphics.SetRenderTarget(RT_FSR_RenderTarget.colorBuffer, RT_FSR_RenderTarget.depthBuffer);
+
+        private void OnPreCull()
+        {
+            // Clone camera properties
+            render_camera.CopyFrom(attached_camera);
+
+            // Set render target
+            render_camera.targetTexture = RT_FSR_RenderTarget;
+
+            // Cache flags
+            cached_culling_mask = attached_camera.cullingMask;
+            cached_clear_flags = attached_camera.clearFlags;
+
+            // Clear flags
+            attached_camera.cullingMask = 0;
+            attached_camera.clearFlags = CameraClearFlags.Nothing;
+        }
+
+
+        private void OnPostRender()
+        {
+            // Restore camera flags
+            attached_camera.clearFlags = cached_clear_flags;
+            attached_camera.cullingMask = cached_culling_mask;
         }
 
 
         private void OnRenderImage(RenderTexture src, RenderTexture dest)
         {
-            compute_FSR.SetInt("input_viewport_width", attached_camera.scaledPixelWidth);
-            compute_FSR.SetInt("input_viewport_height", attached_camera.scaledPixelHeight);
-            compute_FSR.SetInt("input_image_width", attached_camera.pixelWidth);
-            compute_FSR.SetInt("input_image_height", attached_camera.pixelHeight);
+            compute_FSR.SetInt("input_viewport_width", RT_FSR_RenderTarget.width);
+            compute_FSR.SetInt("input_viewport_height", RT_FSR_RenderTarget.height);
+            compute_FSR.SetInt("input_image_width", RT_FSR_RenderTarget.width);
+            compute_FSR.SetInt("input_image_height", RT_FSR_RenderTarget.height);
 
             compute_FSR.SetInt("output_image_width", RT_Output.width);
             compute_FSR.SetInt("output_image_height", RT_Output.height);
@@ -165,7 +205,6 @@ namespace NKLI
                 compute_FSR.Dispatch(0, dispatchX, dispatchY, 1);
             }
 
-            attached_camera.targetTexture = null;
             Graphics.Blit(RT_Output, dest);
         }
     }
