@@ -1,7 +1,6 @@
-# AMD-FSR-for-Unity
-AMD Fidelity Super Resolution ported to Unity. Image effect.
+# AMD FSR (Fidelity Super Resolution) for Unity.
 
-#### For Standard pipeline
+#### For Standard Pipeline
 
 * Add FSR_StandardPipeline.cs to your camera.
 * It must be the first effect on the camera.
