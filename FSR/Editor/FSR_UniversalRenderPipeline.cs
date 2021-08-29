@@ -4,12 +4,13 @@ using UnityEngine;
 namespace NKLI
 {
 #if UNITY_EDITOR
-    [CustomEditor(typeof(FSR_StandardPipeline))]
-    public class FSR_Editor : Editor
+    [CustomEditor(typeof(FSR_UniversalRenderPipeline))]
+    public class FSR_URP_Editor : Editor
     {
         /// Property references
 
         // FSR
+        SerializedProperty m_Settings;
         SerializedProperty m_RenderScale;
         SerializedProperty m_UpsampleMode;
         SerializedProperty m_Sharpening;
@@ -42,10 +43,11 @@ namespace NKLI
         /// </summary>
         void OnEnable()
         {
-            m_RenderScale = serializedObject.FindProperty("render_scale");
-            m_UpsampleMode = serializedObject.FindProperty("upsample_mode");
-            m_Sharpening = serializedObject.FindProperty("sharpening");
-            m_Sharpness = serializedObject.FindProperty("sharpness");
+            m_Settings = serializedObject.FindProperty("settings");
+            m_RenderScale = m_Settings.FindPropertyRelative("render_scale");
+            m_UpsampleMode = m_Settings.FindPropertyRelative("upsample_mode");
+            m_Sharpening = m_Settings.FindPropertyRelative("sharpening");
+            m_Sharpness = m_Settings.FindPropertyRelative("sharpness");
         }
         #endregion
 

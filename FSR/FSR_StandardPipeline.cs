@@ -16,7 +16,9 @@
 using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+#if !UNITY_2019_2_OR_NEWER
 using UnityEngine.XR;
+#endif
 
 namespace NKLI
 {
@@ -34,7 +36,7 @@ namespace NKLI
         private RenderTexture RT_Output;
 
         // Render scale
-        [Range(0.125f, 1)] public float render_scale = 0.75f;
+        [Range(0.25f, 1)] public float render_scale = 0.75f;
         private float render_scale_cached;
 
         public enum upsample_modes
@@ -79,8 +81,8 @@ namespace NKLI
         {
 
             if (RT_FSR_RenderTarget != null) RT_FSR_RenderTarget.Release();
-            float target_width = attached_camera.pixelWidth * render_scale;
-            float target_height = attached_camera.pixelHeight * render_scale;
+            float target_width = attached_camera.scaledPixelWidth * render_scale;
+            float target_height = attached_camera.scaledPixelHeight * render_scale;
             RT_FSR_RenderTarget = new RenderTexture((int)target_width, (int)target_height, 24, attached_camera.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
 
             if (RT_Output != null) RT_Output.Release();

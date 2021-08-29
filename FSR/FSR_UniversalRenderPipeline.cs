@@ -101,10 +101,10 @@ namespace NKLI
             {
                 CommandBuffer cmd = CommandBufferPool.Get();
 
-                cmd.SetComputeIntParam(compute_FSR, "input_viewport_width", renderingData.cameraData.camera.scaledPixelWidth);
-                cmd.SetComputeIntParam(compute_FSR, "input_viewport_height", renderingData.cameraData.camera.scaledPixelHeight);
-                cmd.SetComputeIntParam(compute_FSR, "input_image_width", renderingData.cameraData.camera.pixelWidth);
-                cmd.SetComputeIntParam(compute_FSR, "input_image_height", renderingData.cameraData.camera.pixelHeight);
+                cmd.SetComputeIntParam(compute_FSR, "input_viewport_width", RT_FSR_RenderTarget.width);
+                cmd.SetComputeIntParam(compute_FSR, "input_viewport_height", RT_FSR_RenderTarget.height);
+                cmd.SetComputeIntParam(compute_FSR, "input_image_width", RT_FSR_RenderTarget.width);
+                cmd.SetComputeIntParam(compute_FSR, "input_image_height", RT_FSR_RenderTarget.height);
 
                 cmd.SetComputeIntParam(compute_FSR, "output_image_width", RT_Output.width);
                 cmd.SetComputeIntParam(compute_FSR, "output_image_height", RT_Output.height);
@@ -115,28 +115,20 @@ namespace NKLI
                 int dispatchY = (RT_Output.height + (16 - 1)) / 16;
 
 
-                RenderTextureDescriptor destinationDesc = renderingData.cameraData.cameraTargetDescriptor;
-                destinationDesc.colorFormat = renderingData.cameraData.camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
-                destinationDesc.width = RT_Output.width;
-                destinationDesc.height = RT_Output.height;
-                destinationDesc.enableRandomWrite = true;
-                destinationDesc.useMipMap = false;
-                destinationDesc.depthBufferBits = 24;
-                cmd.GetTemporaryRT(destination.id, destinationDesc);
+                RenderTextureDescriptor renderDesc = renderingData.cameraData.cameraTargetDescriptor;
+                renderDesc.colorFormat = renderingData.cameraData.camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
+                renderDesc.width = RT_Output.width;
+                renderDesc.height = RT_Output.height;
+                renderDesc.enableRandomWrite = true;
+                renderDesc.useMipMap = false;
+                renderDesc.depthBufferBits = 24;
+                cmd.GetTemporaryRT(destination.id, renderDesc);
 
 
                 if (fsrSettings.sharpening && fsrSettings.upsample_mode == FSRSettings.upsample_modes.FSR)
                 {
                     // Create intermediary render texture
-                    RenderTextureDescriptor intermediaryDesc = renderingData.cameraData.cameraTargetDescriptor;
-                    intermediaryDesc.colorFormat = renderingData.cameraData.camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
-                    intermediaryDesc.width = RT_Output.width;
-                    intermediaryDesc.height = RT_Output.height;
-                    intermediaryDesc.enableRandomWrite = true;
-                    intermediaryDesc.useMipMap = false;
-                    intermediaryDesc.depthBufferBits = 24;
-                    cmd.GetTemporaryRT(m_TemporaryIntermediaryTexture.id, intermediaryDesc);
-
+                    cmd.GetTemporaryRT(m_TemporaryIntermediaryTexture.id, renderDesc);
 
                     // Upscale
                     cmd.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 1);
@@ -145,7 +137,7 @@ namespace NKLI
                     cmd.DispatchCompute(compute_FSR, 0, dispatchX, dispatchY, 1);
 
                     // Sharpen
-                    cmd.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 1);
+                    cmd.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 0);
                     cmd.SetComputeFloatParam(compute_FSR, "sharpness", 2 - fsrSettings.sharpness);
                     cmd.SetComputeTextureParam(compute_FSR, 0, "InputTexture", m_TemporaryIntermediaryTexture.id);
                     cmd.SetComputeTextureParam(compute_FSR, 0, "OutputTexture", RT_Output);
@@ -160,8 +152,6 @@ namespace NKLI
                 }
 
                 Blit(cmd, RT_Output, destination.id);
-                //Blit(cmd, RT_FSR_RenderTarget, fsrSettings.render_target);
-                //Blit(cmd, RT_Output, fsrSettings.render_output);
 
                 context.ExecuteCommandBuffer(cmd);
                 CommandBufferPool.Release(cmd);
@@ -190,8 +180,6 @@ namespace NKLI
             if (compute_FSR == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR/FSR'");
 
             fsrSettings = settings;
-            //settings.render_target = RT_FSR_RenderTarget;
-            //settings.render_output = RT_Output;
 
             fsrPass = new FSRPass(RenderPassEvent.AfterRendering, null, -1, name);
 
@@ -205,10 +193,7 @@ namespace NKLI
         [System.Serializable]
         public class FSRSettings
         {
-            //public RenderTexture render_target;
-            //public RenderTexture render_output;
-
-            [Range(0.125f, 1)] public float render_scale = 0.75f;
+            [Range(0.25f, 1)] public float render_scale = 0.75f;
 
             public enum upsample_modes
             {
@@ -232,8 +217,8 @@ namespace NKLI
 
             // Render target texture
             if (RT_FSR_RenderTarget != null) RT_FSR_RenderTarget.Release();
-            float target_width = cam.pixelWidth * fsrSettings.render_scale;
-            float target_height = cam.pixelHeight * fsrSettings.render_scale;
+            float target_width = cam.scaledPixelWidth * fsrSettings.render_scale;
+            float target_height = cam.scaledPixelHeight * fsrSettings.render_scale;
             RT_FSR_RenderTarget = new RenderTexture((int)target_width, (int)target_height, 24, cam.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
 
             if (RT_Output != null) RT_Output.Release();
