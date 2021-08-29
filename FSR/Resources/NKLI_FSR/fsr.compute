@@ -151,7 +151,7 @@ void mainCS(uint3 LocalThreadId : SV_GroupThreadID, uint3 WorkGroupId : SV_Group
 		FsrRcasCon(Const0, sharpness);
 	}
 
-	// Do remapping of local xy in workgroup for a more PS-like swizzle pattern.
+	// Do remapping of local xy in work-group for a more PS-like swizzle pattern.
 	AU2 gxy = ARmp8x8(LocalThreadId.x) + AU2(WorkGroupId.x << 4u, WorkGroupId.y << 4u);
 
 	CurrFilter(gxy, Const0, Const1, Const2, Const3);
