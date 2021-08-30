@@ -1,9 +1,10 @@
-﻿using UnityEditor;
+﻿
+using UnityEditor;
 using UnityEngine;
 
 namespace NKLI
 {
-#if UNITY_EDITOR
+//#if UNITY_EDITOR && UNIVERSAL_PIPELINE_CORE_INCLUDED
     [CustomEditor(typeof(FSR_UniversalRenderPipeline))]
     public class FSR_URP_Editor : Editor
     {
@@ -37,7 +38,7 @@ namespace NKLI
         }
 
 
-        #region GetSettings
+    #region GetSettings
         /// <summary>
         /// Load all property references from main script
         /// </summary>
@@ -49,7 +50,7 @@ namespace NKLI
             m_Sharpening = m_Settings.FindPropertyRelative("sharpening");
             m_Sharpness = m_Settings.FindPropertyRelative("sharpness");
         }
-        #endregion
+    #endregion
 
 
         public override void OnInspectorGUI()
@@ -104,7 +105,7 @@ namespace NKLI
             EditorGUILayout.EndHorizontal();
         }
 
-        #region Label
+    #region Label
 
         public static void Label(string text, GUIStyle textStyle, bool center)
         {
@@ -142,9 +143,9 @@ namespace NKLI
             }
         }
 
-        #endregion
+    #endregion
 
-        #region TextStyles
+    #region TextStyles
         protected virtual GUIStyle TextTitleStyle
         {
 
@@ -173,7 +174,7 @@ namespace NKLI
                 return style;
             }
         }
-        #endregion
+    #endregion
     }
-#endif
+//#endif
 }

@@ -17,13 +17,18 @@ using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
+//#if UNIVERSAL_PIPELINE_CORE_INCLUDED
 using UnityEngine.Rendering.Universal;
+//#endif
 #if !UNITY_2019_2_OR_NEWER
 using UnityEngine.XR;
 #endif
 
+using static UnityEngine.Rendering.Universal.UniversalAdditionalCameraData;
+
 namespace NKLI
 {
+//#if UNIVERSAL_PIPELINE_CORE_INCLUDED
     /// <summary>
     /// Render pipeline feature
     /// </summary>
@@ -44,8 +49,25 @@ namespace NKLI
         public FSRSettings settings = new FSRSettings();
         private static FSRSettings fsrSettings;
 
-        // Pass
+        // Passes
         FSRPass fsrPass;
+        BeforeEverythingPass beforePass;
+
+        /// <summary>
+        /// Sets the camera render target
+        /// </summary>
+        private class BeforeEverythingPass : ScriptableRenderPass
+        {
+            public BeforeEverythingPass(RenderPassEvent renderPass)
+            {
+                this.renderPassEvent = renderPass;
+            }
+
+            public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+            {
+                renderingData.cameraData.targetTexture = RT_FSR_RenderTarget;
+            }
+        }
 
         /// <summary>
         /// Render pass
@@ -73,7 +95,7 @@ namespace NKLI
             /// <param name="blitMaterial"></param>
             /// <param name="blitShaderPassIndex"></param>
             /// <param name="tag"></param>
-            public FSRPass(RenderPassEvent renderPassEvent, Material blitMaterial, int blitShaderPassIndex, string tag)
+            public FSRPass(RenderPassEvent renderPassEvent)
             {
                 this.renderPassEvent = renderPassEvent;
                 m_TemporaryIntermediaryTexture.Init("_TemporaryIntermediaryTexture");
@@ -181,7 +203,8 @@ namespace NKLI
 
             fsrSettings = settings;
 
-            fsrPass = new FSRPass(RenderPassEvent.AfterRendering, null, -1, name);
+            fsrPass = new FSRPass(RenderPassEvent.AfterRendering);
+            beforePass = new BeforeEverythingPass(RenderPassEvent.BeforeRendering);
 
             textures_created = false;
         }
@@ -214,12 +237,11 @@ namespace NKLI
         /// <param name="cam"></param>
         private void CreateRenderTexture(Camera cam)
         {
-
             // Render target texture
             if (RT_FSR_RenderTarget != null) RT_FSR_RenderTarget.Release();
-            float target_width = cam.scaledPixelWidth * fsrSettings.render_scale;
-            float target_height = cam.scaledPixelHeight * fsrSettings.render_scale;
-            RT_FSR_RenderTarget = new RenderTexture((int)target_width, (int)target_height, 24, cam.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
+            int target_width = (int)(cam.scaledPixelWidth * fsrSettings.render_scale);
+            int target_height = (int)(cam.scaledPixelHeight * fsrSettings.render_scale);
+            RT_FSR_RenderTarget = new RenderTexture(target_width, target_height, 24, cam.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
 
             if (RT_Output != null) RT_Output.Release();
             RT_Output = new RenderTexture(cam.pixelWidth, cam.pixelHeight, 24, cam.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
@@ -241,22 +263,23 @@ namespace NKLI
         /// <param name="renderingData"></param>
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
-            // If the render scale has changed we must recreate our textures
-            if (fsrSettings.render_scale != render_scale_cached || !textures_created)
+            if (renderingData.cameraData.cameraType == CameraType.Game)
             {
-                textures_created = true;
-                render_scale_cached = fsrSettings.render_scale;
-                CreateRenderTexture(renderingData.cameraData.camera);
+                // If the render scale has changed we must recreate our textures
+                if (fsrSettings.render_scale != render_scale_cached || !textures_created)
+                {
+                    textures_created = true;
+                    render_scale_cached = fsrSettings.render_scale;
+                    CreateRenderTexture(renderingData.cameraData.camera);
+                }
+
+                // Setup pass
+                RenderTargetHandle dest = RenderTargetHandle.CameraTarget;
+                fsrPass.Setup(RT_FSR_RenderTarget, dest);
+                renderer.EnqueuePass(fsrPass);
+                renderer.EnqueuePass(beforePass);
             }
-
-            // We must render into a texture
-            renderingData.cameraData.targetTexture = RT_FSR_RenderTarget;
-            Graphics.SetRenderTarget(RT_FSR_RenderTarget.colorBuffer, RT_FSR_RenderTarget.depthBuffer);
-
-            // Setup pass
-            RenderTargetHandle dest = RenderTargetHandle.CameraTarget;
-            fsrPass.Setup(RT_FSR_RenderTarget, dest);
-            renderer.EnqueuePass(fsrPass);
         }
     }
+//#endif
 }
