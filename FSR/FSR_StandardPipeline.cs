@@ -16,9 +16,9 @@
 using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
-#if !UNITY_2019_2_OR_NEWER
+using UnityEngine.Rendering;
 using UnityEngine.XR;
-#endif
+
 
 namespace NKLI
 {
@@ -105,11 +105,8 @@ namespace NKLI
 
             if (RT_Output != null) RT_Output.Release();
             RT_Output = new RenderTexture(attached_camera.pixelWidth, attached_camera.pixelHeight, 24, attached_camera.allowHDR ? DefaultFormat.HDR : DefaultFormat.LDR);
-#if UNITY_2019_2_OR_NEWER
-            RT_Output.vrUsage = VRTextureUsage.DeviceSpecific;
-#else
-            if (UnityEngine.XR.XRSettings.isDeviceActive) RT_Output.vrUsage = VRTextureUsage.TwoEyes;
-#endif
+            if (XRSettings.isDeviceActive) RT_Output.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
+
             RT_Output.enableRandomWrite = true;
             RT_Output.useMipMap = false;
             RT_Output.Create();
@@ -145,16 +142,9 @@ namespace NKLI
         }
 
 
-        private void OnPostRender()
-        {
-            // Restore camera flags
-            attached_camera.clearFlags = cached_clear_flags;
-            attached_camera.cullingMask = cached_culling_mask;
-        }
-
-
         private void OnRenderImage(RenderTexture src, RenderTexture dest)
         {
+            // Set parameters to shader
             compute_FSR.SetInt("input_viewport_width", RT_FSR_RenderTarget.width);
             compute_FSR.SetInt("input_viewport_height", RT_FSR_RenderTarget.height);
             compute_FSR.SetInt("input_image_width", RT_FSR_RenderTarget.width);
@@ -165,20 +155,27 @@ namespace NKLI
 
             compute_FSR.SetInt("upsample_mode", (int)upsample_mode);
 
+            // Calculate thread counts
             int dispatchX = (RT_Output.width + (16 - 1)) / 16;
             int dispatchY = (RT_Output.height + (16 - 1)) / 16;
 
             if (sharpening && upsample_mode == upsample_modes.FSR)
             {
                 // Create intermediary render texture
-                RenderTexture intermediary = RenderTexture.GetTemporary(RT_Output.width, RT_Output.height, 24, RT_Output.format);
-#if UNITY_2019_2_OR_NEWER
-                intermediary.vrUsage = VRTextureUsage.DeviceSpecific;
-#else
-                if (UnityEngine.XR.XRSettings.isDeviceActive) intermediary.vrUsage = VRTextureUsage.TwoEyes;
-#endif
-                intermediary.enableRandomWrite = true;
-                intermediary.useMipMap = false;
+                RenderTextureDescriptor intermdiaryDesc = new RenderTextureDescriptor
+                {
+                    width = RT_Output.width,
+                    height = RT_Output.height,
+                    depthBufferBits = 24,
+                    volumeDepth = 1,
+                    msaaSamples = 1,
+                    dimension = TextureDimension.Tex2D,
+                    graphicsFormat = RT_Output.graphicsFormat,
+                    enableRandomWrite = true,
+                    useMipMap = false
+                };
+                if (XRSettings.isDeviceActive) intermdiaryDesc.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
+                RenderTexture intermediary = RenderTexture.GetTemporary(intermdiaryDesc);
                 intermediary.Create();
 
                 // Upscale
@@ -206,6 +203,10 @@ namespace NKLI
             }
 
             Graphics.Blit(RT_Output, dest);
+
+            // Restore camera flags
+            attached_camera.clearFlags = cached_clear_flags;
+            attached_camera.cullingMask = cached_culling_mask;
         }
     }
 }
