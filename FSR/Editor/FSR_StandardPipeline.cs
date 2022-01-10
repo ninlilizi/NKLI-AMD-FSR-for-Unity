@@ -14,6 +14,7 @@ namespace NKLI
         SerializedProperty m_UpsampleMode;
         SerializedProperty m_Sharpening;
         SerializedProperty m_Sharpness;
+        SerializedProperty m_CopyBuffers;
 
 
         public static GUIStyle titleBoxStyle;
@@ -33,6 +34,8 @@ namespace NKLI
                     EditorGUILayout.PropertyField(m_Sharpness, new GUIContent(" Sharpness amount"));
                 }
             }
+
+            EditorGUILayout.PropertyField(m_CopyBuffers, new GUIContent(" Copy render buffers"));
         }
 
 
@@ -46,6 +49,7 @@ namespace NKLI
             m_UpsampleMode = serializedObject.FindProperty("upsample_mode");
             m_Sharpening = serializedObject.FindProperty("sharpening");
             m_Sharpness = serializedObject.FindProperty("sharpness");
+            m_CopyBuffers = serializedObject.FindProperty("CopyRenderBuffers");
         }
         #endregion
 

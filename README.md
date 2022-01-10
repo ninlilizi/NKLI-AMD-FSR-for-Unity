@@ -4,11 +4,7 @@
 Implimented as an image effect.
 * Add FSR_StandardPipeline.cs to your camera.
 * It must be the first effect on the camera.
-
-
-#### For Universal Render Pipeline
-Implimented as a Pipeline Render Feature.
-* Add to your pipeline settings asset using the *'Add Render Feature'* button.
+* If you use post-effects reliant on deferred or depth buffers, enable 'Copy Render Buffers' to pass them through.
 
 
 Enjoy using this as an example for integration into your Unity projects!

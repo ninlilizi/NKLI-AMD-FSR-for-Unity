@@ -1,0 +1,49 @@
+﻿#pragma kernel CSMain_Resize // Blind scales the buffers to the new target
+
+// Input textures
+Texture2D<float4> tex_Input1; // GBuffer0
+Texture2D<float4> tex_Input2; // GBuffer1
+Texture2D<float4> tex_Input3; // GBuffer2
+Texture2D<float4> tex_Input4; // GBuffer3
+
+// Output textures
+RWTexture2D<float4> tex_Output1; // GBuffer0
+RWTexture2D<float4> tex_Output2; // GBuffer1
+RWTexture2D<float4> tex_Output3; // GBuffer2
+RWTexture2D<float4> tex_Output4; // GBuffer3
+RWTexture2D<float4> tex_Output6; // DepthNormals
+RWTexture2D<float4> tex_Output7; // MotionVectors
+
+// Globals
+Texture2D<half4> _CameraDepthNormalsTexture;
+Texture2D<half4> _CameraMotionVectorsTexture;
+
+bool isDeferred;
+bool copyGBuffer3;
+bool flipImage;
+
+uint input_height;
+float renderScale;
+
+
+[numthreads(8,8,1)]
+void CSMain_Resize(uint3 id : SV_DispatchThreadID)
+{
+    uint2 dstCoord = id.xy;
+    uint2 srcCoord = id.xy * renderScale;
+    if (flipImage) dstCoord.y = input_height - dstCoord.y - 1;
+
+    tex_Output6[id.xy] = _CameraDepthNormalsTexture[srcCoord.xy]; // DepthNormals
+    tex_Output7[id.xy] = _CameraMotionVectorsTexture[srcCoord.xy]; // MotionVectors
+
+    if (isDeferred)
+    {
+
+        tex_Output1[id.xy] = tex_Input1[srcCoord.xy]; // GBuffer0
+        tex_Output2[id.xy] = tex_Input2[srcCoord.xy]; // GBuffer1
+        tex_Output3[id.xy] = tex_Input3[srcCoord.xy]; // GBuffer2
+
+        if (copyGBuffer3)
+            tex_Output4[id.xy] = tex_Input4[srcCoord.xy]; // GBuffer3
+    }
+}
