@@ -179,7 +179,8 @@ namespace NKLI
                 depthBufferBits = 24,
                 volumeDepth = 1,
                 msaaSamples = 1,
-                useMipMap = false
+                useMipMap = false,
+                sRGB = false
             };
             if (XRSettings.isDeviceActive) rtDesc.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
             RenderTextureFormat format = attached_camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
@@ -202,9 +203,9 @@ namespace NKLI
                 CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, format);
             }
 
-            rtDesc.width = attached_camera.pixelWidth;
-            rtDesc.height = attached_camera.pixelHeight;
-            rtDesc.enableRandomWrite = true;
+            //rtDesc.width = attached_camera.pixelWidth;
+            //rtDesc.height = attached_camera.pixelHeight;
+            //rtDesc.enableRandomWrite = true;
 
             CreateRenderTexture(rtDesc, ref RT_Output, format);
         }
@@ -334,6 +335,7 @@ namespace NKLI
 
             // Set render target
             render_camera.targetTexture = RT_FSR_RenderTarget_Raw;
+            //render_camera.SetTargetBuffers(RT_FSR_RenderTarget_Raw.colorBuffer, RT_FSR_RenderTarget_Raw.depthBuffer);
 
             // Cache flags
             cached_culling_mask = attached_camera.cullingMask;
@@ -342,8 +344,10 @@ namespace NKLI
             // Clear flags
             attached_camera.cullingMask = 0;
             attached_camera.clearFlags = CameraClearFlags.Nothing;
+            //GL.Clear(true, true, Color.clear);
 
             // Render to buffers
+            //render_camera.clearFlags = CameraClearFlags.SolidColor;
             render_camera.Render();
 
         }
@@ -377,7 +381,11 @@ namespace NKLI
                     volumeDepth = 1,
                     msaaSamples = 1,
                     dimension = TextureDimension.Tex2D,
+#if UNITY_2019_4_OR_NEWER
                     graphicsFormat = RT_Output.graphicsFormat,
+#else
+                    colorFormat = RT_Output.format,
+#endif
                     enableRandomWrite = true,
                     useMipMap = false
                 };

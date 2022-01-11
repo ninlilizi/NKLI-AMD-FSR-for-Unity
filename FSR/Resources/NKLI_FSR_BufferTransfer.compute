@@ -38,7 +38,6 @@ void CSMain_Resize(uint3 id : SV_DispatchThreadID)
 
     if (isDeferred)
     {
-
         tex_Output1[id.xy] = tex_Input1[srcCoord.xy]; // GBuffer0
         tex_Output2[id.xy] = tex_Input2[srcCoord.xy]; // GBuffer1
         tex_Output3[id.xy] = tex_Input3[srcCoord.xy]; // GBuffer2
