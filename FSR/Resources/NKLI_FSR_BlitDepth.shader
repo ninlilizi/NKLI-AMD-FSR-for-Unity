@@ -36,7 +36,7 @@
                 o.uv = v.uv;
 
 #if UNITY_UV_STARTS_AT_TOP
-                o.uv.y = 1.0 - v.uv.y;
+                //o.uv.y = 1.0 - v.uv.y;
 #endif
 
                 return o;

@@ -103,7 +103,7 @@ namespace NKLI
             SetCameraEventTypes();
 
             // Remove command buffer if one is left over
-            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer copy") != null)
+            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
             {
                 attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
             }
@@ -113,18 +113,18 @@ namespace NKLI
             render_camera_gameObject.transform.parent = transform;
             render_camera_gameObject.transform.localPosition = Vector3.zero;
             render_camera_gameObject.transform.localRotation = Quaternion.identity;
-            render_camera_gameObject.hideFlags = HideFlags.DontSave;
+            render_camera_gameObject.hideFlags = HideFlags.HideAndDontSave;
             render_camera = render_camera_gameObject.AddComponent<Camera>();
             render_camera.gameObject.SetActive(true);
 
             // Add command buffer to render camera
             render_camera_buffer_copies = new CommandBuffer();
-            render_camera_buffer_copies.name = "FSR Buffer copy";
+            render_camera_buffer_copies.name = "FSR Buffer transfer";
             render_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
 
             // Add command buffer to attached camera.
             attached_camera_buffer_copies = new CommandBuffer();
-            attached_camera_buffer_copies.name = "FSR Buffer copy";
+            attached_camera_buffer_copies.name = "FSR Buffer transfer";
             attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
 
             // Create textures
@@ -159,8 +159,18 @@ namespace NKLI
             DestroyRenderTexture(ref RT_Output);
 
             // Remove command buffers
-            if (render_camera != null) render_camera.RemoveCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
-            attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
+            if (render_camera != null)
+            {
+                if ((new List<CommandBuffer>(render_camera.GetCommandBuffers(CameraEvent.BeforeImageEffectsOpaque))).Find(x => x.name == "FSR Buffer transfer") != null)
+                {
+                    render_camera.RemoveCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
+                }
+            }
+
+            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
+            {
+                attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
+            }
         }
 
 
@@ -169,11 +179,11 @@ namespace NKLI
         /// </summary>
         private void CreateRenderTextures()
         {
+            RenderTextureFormat format = attached_camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
+
             // Descriptor
-            RenderTextureDescriptor rtDesc = new RenderTextureDescriptor
+            RenderTextureDescriptor rtDesc = new RenderTextureDescriptor((int)(attached_camera.pixelWidth * render_scale), (int)(attached_camera.pixelHeight * render_scale), format)
             {
-                width = (int)(attached_camera.pixelWidth * render_scale),
-                height = (int)(attached_camera.pixelHeight * render_scale),
                 dimension = TextureDimension.Tex2D,
                 enableRandomWrite = true,
                 depthBufferBits = 24,
@@ -183,7 +193,6 @@ namespace NKLI
                 sRGB = false
             };
             if (XRSettings.isDeviceActive) rtDesc.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
-            RenderTextureFormat format = attached_camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
 
             // Create RTs
             CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, format);
@@ -202,10 +211,6 @@ namespace NKLI
                 CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, format);
                 CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, format);
             }
-
-            //rtDesc.width = attached_camera.pixelWidth;
-            //rtDesc.height = attached_camera.pixelHeight;
-            //rtDesc.enableRandomWrite = true;
 
             CreateRenderTexture(rtDesc, ref RT_Output, format);
         }
@@ -326,16 +331,12 @@ namespace NKLI
 
         private void OnPreCull()
         {
-            // Enable depth modes
-            attached_camera.depthTextureMode = DepthTextureMode.Depth | DepthTextureMode.DepthNormals | DepthTextureMode.MotionVectors;
-
             // Clone camera properties
             render_camera.CopyFrom(attached_camera);
             render_camera.enabled = false;
 
             // Set render target
             render_camera.targetTexture = RT_FSR_RenderTarget_Raw;
-            //render_camera.SetTargetBuffers(RT_FSR_RenderTarget_Raw.colorBuffer, RT_FSR_RenderTarget_Raw.depthBuffer);
 
             // Cache flags
             cached_culling_mask = attached_camera.cullingMask;
@@ -344,10 +345,8 @@ namespace NKLI
             // Clear flags
             attached_camera.cullingMask = 0;
             attached_camera.clearFlags = CameraClearFlags.Nothing;
-            //GL.Clear(true, true, Color.clear);
 
             // Render to buffers
-            //render_camera.clearFlags = CameraClearFlags.SolidColor;
             render_camera.Render();
 
         }
