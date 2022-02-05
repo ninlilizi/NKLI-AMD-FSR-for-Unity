@@ -13,6 +13,8 @@
 //AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 //TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// Add 'NKLI_DEBUG' to your platform defines to enable additional error logging.
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -577,14 +579,18 @@ namespace NKLI
         {
             for (executionStackPosition = 0; executionStackPosition < executionStack.Count; ++executionStackPosition)
             {
+#if NKLI_DEBUG
                 try
                 {
+#endif
                     executionStack[executionStackPosition].Invoke();
+#if NKLI_DEBUG
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError(ex);
                 }
+#endif
             }
         }
 
