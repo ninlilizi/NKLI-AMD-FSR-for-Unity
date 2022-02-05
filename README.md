@@ -10,11 +10,11 @@ Implimented as an image effect.
 * Forward and Deferred render paths.
 * Compatibility with image effects.
 * Correct HDRI and colour-space handling.
-* CPU Optimized: No garbage generation and a single branch instruction per frame.
+* CPU Optimized: No garbage generation and minimal branch instructions per frame.
 
 #### Image effect compatiblity
 A persistent child camera called 'FSR_Render_Child' will be created when you add this effect to your camera.
-In most cases you need to check 'Copy Render Buffers' for effects to work correctly, regardless if executed before or after scaling.
+In some cases you need to check 'Copy Render Buffers' for effects after scaling to work correctly.
 * Maximal compatilibity is provided for effects run before scaling.
 * Limited compatibility is provided for effects run after scaling.
 * To run an effect before scaling, add the effect to the render child. 
