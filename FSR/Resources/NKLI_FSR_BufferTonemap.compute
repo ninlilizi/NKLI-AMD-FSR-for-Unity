@@ -1,0 +1,49 @@
+﻿#pragma kernel CSMain_Tonemap // Blind scales the buffers to the new target
+
+// We want these defined early
+#define A_GPU 1
+#define A_HLSL 1
+#define A_HALF 1
+
+#include "NKLI_FSR/ffx_a.cginc"
+#include "NKLI_FSR/ffx_fsr1.cginc"
+#include "NKLI_FSR_Swizzle.cginc"
+
+// Input textures
+Texture2D<float4> tex_Input;
+
+Texture2D<float> NoiseTexture;
+
+// Output textures
+RWTexture2D<float4> tex_Output;
+
+// Samplers
+SamplerState src_point_repeat_sampler;
+//SamplerState src_linear_clamp;
+
+uint2 dispatchXY;
+
+
+[numthreads(8, 8, 1)]
+void CSMain_Tonemap(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
+{
+    // Swizzle
+    const float2 swizzleID = ThreadGroupTilingX(uint2(dispatchXY.x, dispatchXY.y), uint2(8, 8), 32, gtid.xy, gid.xy);
+
+	// Setup noise
+    const float2 noiseUV = float2(swizzleID.x / dispatchXY.x, swizzleID.y / dispatchXY.y);
+    const float4 noiseSample = NoiseTexture.SampleLevel(src_point_repeat_sampler, noiseUV, 0);
+    const float noise = (noiseSample.r + noiseSample.g + noiseSample.b + noiseSample.a) * 0.25;
+
+    // Sample
+    float4 sample = tex_Input[swizzleID.xy];
+
+	// Apply tone-mapping
+    FsrSrtmH(sample.rgb);
+
+    // Linear to 10bit Gamma 2.0
+    FsrTepdC10H(sample.rgb, noise);
+
+    // Write
+    tex_Output[swizzleID.xy].rgba = sample;
+}

@@ -21,7 +21,8 @@
 
 #define threadGroupWorkRegionDim 16
 
-uint4 Sample; // HDR mode
+//uint4 Sample;
+uint HDR;
 
 // Input / Output dimensions
 uint input_viewport_width;
@@ -55,6 +56,11 @@ float sharpness;
 	{
 		Filter = MIN_MAG_MIP_LINEAR_POINT;
 	};
+
+// Apply this to restore the linear HDR color before writing out the result of the resolve.
+float max3(float x, float y, float z) { return max(x, max(y, z)); }
+float3 TonemapInvert(float3 c) { return c * rcp(1.0 - max3(c.r, c.g, c.b)); }
+
 
 #if SAMPLE_SLOW_FALLBACK
 	#include "ffx_a.cginc"
@@ -105,13 +111,13 @@ void CurrFilter(int2 pos, float4 Const0, float4 Const1, float4 Const2, float4 Co
 #if SAMPLE_SLOW_FALLBACK
 			AF3 c;
 			FsrEasuF(c, pos, Const0, Const1, Const2, Const3);
-			if (Sample.x == 1)
+			if (HDR == 1)
 				c *= c;
 			OutputTexture[pos] = float4(c, 1);
 #else
 			AH3 c;
 			FsrEasuH(c, pos, Const0, Const1, Const2, Const3);
-			if (Sample.x == 1)
+			if (HDR == 1)
 				c *= c;
 			OutputTexture[pos] = AH4(c, 1);
 #endif
@@ -122,13 +128,13 @@ void CurrFilter(int2 pos, float4 Const0, float4 Const1, float4 Const2, float4 Co
 #if SAMPLE_SLOW_FALLBACK
 			AF3 c;
 			FsrRcasF(c.r, c.g, c.b, pos, Const0);
-			if (Sample.x == 1)
+			if (HDR == 1)
 				c *= c;
 			OutputTexture[pos] = float4(c, 1);
 #else
 			AH3 d;
 			FsrRcasH(d.r, d.g, d.b, pos, Const0);
-			if (Sample.x == 1)
+			if (HDR == 1)
 				d *= d;
 			OutputTexture[pos] = AH4(d, 1);
 #endif

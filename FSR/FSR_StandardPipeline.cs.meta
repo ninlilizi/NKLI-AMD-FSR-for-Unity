@@ -7,7 +7,11 @@ MonoImporter:
   - compute_FSR: {fileID: 7200000, guid: 5443d441ae30b2043a972e109fde1905, type: 3}
   - compute_BufferTransfer: {fileID: 7200000, guid: 88d48af06eb6ad04994a8cfee7e398cf,
       type: 3}
+  - compute_BufferTonemap: {fileID: 7200000, guid: 43c00cdab2a37be4598cb4ba345f0a2f,
+      type: 3}
   - shader_BlitDepth: {fileID: 4800000, guid: 2d7bf21666cd65b43a6de76b50883606, type: 3}
+  - shader_ReverseTonemap: {fileID: 4800000, guid: 5949c82d934e58e459e742764660d104,
+      type: 3}
   - RT_FSR_RenderTarget: {instanceID: 0}
   - RT_FSR_RenderTarget_Raw: {instanceID: 0}
   - RT_FSR_RenderTarget_Depth: {instanceID: 0}
@@ -17,7 +21,9 @@ MonoImporter:
   - RT_FSR_RenderTarget_gGBuffer3: {instanceID: 0}
   - RT_FSR_RenderTarget_DepthNormals: {instanceID: 0}
   - RT_FSR_RenderTarget_MotionVectors: {instanceID: 0}
+  - RT_Intermediary: {instanceID: 0}
   - RT_Output: {instanceID: 0}
+  - Light_Directional: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

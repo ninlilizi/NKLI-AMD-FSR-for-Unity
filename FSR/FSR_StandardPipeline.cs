@@ -35,10 +35,13 @@ namespace NKLI
         // Shaders
         public ComputeShader compute_FSR;
         public ComputeShader compute_BufferTransfer;
+        public ComputeShader compute_BufferTonemap;
         public Shader shader_BlitDepth;
+        public Shader shader_ReverseTonemap;
 
         // Materials
         private Material material_BlitDepth;
+        private Material material_ReverseTonemap;
 
         // Render textures
         public RenderTexture RT_FSR_RenderTarget;
@@ -60,13 +63,16 @@ namespace NKLI
         private readonly List<Action> stack_PreCull = new List<Action>();
         private readonly List<Action> stack_OnRenderImage = new List<Action>();
 
+        private int blueNoiseFrameSwitch;
+        private Texture2D[] blueNoise;
+
 
         // Cached camera flags
         [NonSerialized] private int cached_culling_mask;
         [NonSerialized] private CameraClearFlags cached_clear_flags;
 
         // Render scale
-        [Range(0.25f, 1)] public float render_scale = 0.75f;
+        [Range(0.5f, 1)] public float render_scale = 0.75f;
 
         // Copies render buffers from down-sampled to attached camera
         [Tooltip("Enable this to support post-effects dependant on the deferred and depth buffers")]
@@ -91,7 +97,7 @@ namespace NKLI
         public upsample_modes upsample_mode;
 
         public bool sharpening;
-        [Range(0, 2)] public float sharpness = 1;
+        [Range(0, 2)] public float sharpness = 1.5f;
 
         // Startup race-condition check
         [NonSerialized] private bool initlised = false;
@@ -107,10 +113,17 @@ namespace NKLI
             compute_BufferTransfer = Resources.Load("NKLI_FSR_BufferTransfer") as ComputeShader;
             if (compute_BufferTransfer == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR_BufferTransfer'");
 
+            compute_BufferTonemap = Resources.Load("NKLI_FSR_BufferTonemap") as ComputeShader;
+            if (compute_BufferTransfer == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR_BufferTonemap'");
+
             shader_BlitDepth = Shader.Find("Hidden/NKLI_FSR_BlitDepth");
             if (shader_BlitDepth == null) throw new Exception("[FSR] failed to load shader 'Hidden/NKLI_FSR_BlitDepth'");
 
+            shader_ReverseTonemap = Shader.Find("Hidden/NKLI_FSR_ReverseTonemap");
+            if (shader_ReverseTonemap == null) throw new Exception("[FSR] failed to load shader 'Hidden/NKLI_FSR_ReverseTonemap'");
+
             material_BlitDepth = new Material(shader_BlitDepth);
+            material_ReverseTonemap = new Material(shader_ReverseTonemap);
 
             // Cache this
             attached_camera = GetComponent<Camera>();
@@ -135,6 +148,25 @@ namespace NKLI
 
             OnRenderImageBuffer = new CommandBuffer();
             OnRenderImageBuffer.name = "OnRenderImage()";
+
+
+            //Get blue noise textures
+            blueNoise = new Texture2D[64];
+            for (int i = 0; i < 64; i++)
+            {
+                string fileName = "HDR_RGBA_" + i.ToString();
+                Texture2D blueNoiseTexture = Resources.Load("Textures/Blue Noise/64_64/" + fileName) as Texture2D;
+
+                if (blueNoiseTexture == null)
+                {
+                    Debug.LogWarning("Unable to find noise texture");
+                }
+
+                blueNoise[i] = blueNoiseTexture;
+
+            }
+
+
 
             // race condition sanity flag
             initlised = true;
@@ -219,7 +251,7 @@ namespace NKLI
             };
 
             // Create RTs
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, format);
+            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, RenderTextureFormat.ARGB2101010);
             CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Raw, format);
 
             rtDesc.depthBufferBits = 0;
@@ -233,10 +265,10 @@ namespace NKLI
                 CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_MotionVectors, RenderTextureFormat.ARGBHalf);
                 if (attached_camera.renderingPath != RenderingPath.Forward)
                 {
-                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer0, format);
-                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer1, format);
-                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, format);
-                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, format);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer0, RenderTextureFormat.ARGBHalf);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer1, RenderTextureFormat.ARGB32);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, RenderTextureFormat.ARGB2101010);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, RenderTextureFormat.ARGB2101010);
                 }
             }
 
@@ -301,8 +333,15 @@ namespace NKLI
             render_camera_buffer_copies.Clear();
             attached_camera_buffer_copies.Clear();
 
-            // Render target
-            render_camera_buffer_copies.Blit(RT_FSR_RenderTarget_Raw, RT_FSR_RenderTarget);
+            // Dispatch sizes
+            int[] dispatchXY0 = { RT_FSR_RenderTarget_Raw.width / 8, RT_FSR_RenderTarget_Raw.height / 8 };
+            int[] dispatchXY1 = { attached_camera.pixelWidth / 8, attached_camera.pixelHeight / 8 };
+
+            // Apply tone-mapping and convert to Gamma 2.0
+            render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTonemap, 0, "tex_Input", RT_FSR_RenderTarget_Raw);
+            render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTonemap, 0, "tex_Output", RT_FSR_RenderTarget);
+            render_camera_buffer_copies.SetComputeIntParams(compute_BufferTonemap, "dispatchXY", dispatchXY0);
+            render_camera_buffer_copies.DispatchCompute(compute_BufferTonemap, 0, dispatchXY0[0], dispatchXY0[1], 1);
 
             if (CopyRenderBuffers)
             {
@@ -311,9 +350,11 @@ namespace NKLI
                 render_camera_buffer_copies.Blit(null, RT_FSR_RenderTarget_Depth, material_BlitDepth); // Breaks randomly when copied from the compute
 
                 // Props
-                render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "flipImage", 1);
+
+                //render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "flipImage", 0);
                 render_camera_buffer_copies.SetComputeFloatParam(compute_BufferTransfer, "renderScale", render_scale);
-                render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "input_height", attached_camera.pixelHeight);
+                render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "output_height", attached_camera.pixelHeight);
+                render_camera_buffer_copies.SetComputeIntParams(compute_BufferTransfer, "dispatchXY", dispatchXY1);
 
                 // Set inputs and outputs
                 if (attached_camera.renderingPath != RenderingPath.Forward)
@@ -359,7 +400,7 @@ namespace NKLI
             }
 
             // Dispatch copy from buffers
-            render_camera_buffer_copies.DispatchCompute(compute_BufferTransfer, 0, attached_camera.pixelWidth / 8, attached_camera.pixelHeight / 8, 1);
+            render_camera_buffer_copies.DispatchCompute(compute_BufferTransfer, 0, dispatchXY1[0], dispatchXY1[1], 1);
 
 
             // Build OnRenderImage buffer
@@ -384,6 +425,8 @@ namespace NKLI
             OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "output_image_height", RT_Output.height);
 
             OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "upsample_mode", (int)upsample_mode);
+            //OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "HDR", attached_camera.allowHDR? 1 : 0);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "HDR", 0);
 
             // Calculate thread counts
             int dispatchX = (RT_Output.width + (16 - 1)) / 16;
@@ -447,6 +490,10 @@ namespace NKLI
                 // Clear flags
                 attached_camera.cullingMask = 0;
                 attached_camera.clearFlags = CameraClearFlags.Nothing;
+
+                // Update blue noise texture
+                blueNoiseFrameSwitch = (blueNoiseFrameSwitch + 1) % (64);
+                compute_BufferTonemap.SetTexture(0, "NoiseTexture", blueNoise[blueNoiseFrameSwitch]);
 
                 // Render to buffers
                 render_camera.Render();
@@ -565,7 +612,7 @@ namespace NKLI
             ExecuteStack(stack_OnRenderImage);
 
             // Copy output to destination
-            Graphics.Blit(RT_Output, dest);
+            Graphics.Blit(RT_Output, dest, material_ReverseTonemap);
         }
 
 

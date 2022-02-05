@@ -1,16 +1,24 @@
 ﻿#pragma kernel CSMain_Resize // Blind scales the buffers to the new target
 
+// We want these defined early
+#define A_GPU 1
+#define A_HLSL 1
+
+#include "NKLI_FSR/ffx_a.cginc"
+#include "NKLI_FSR/ffx_fsr1.cginc"
+#include "NKLI_FSR_Swizzle.cginc"
+
 // Input textures
-Texture2D<float4> tex_Input1; // GBuffer0
-Texture2D<float4> tex_Input2; // GBuffer1
-Texture2D<float4> tex_Input3; // GBuffer2
-Texture2D<float4> tex_Input4; // GBuffer3
+Texture2D<half4> tex_Input1; // GBuffer0
+Texture2D<half4> tex_Input2; // GBuffer1
+Texture2D<half4> tex_Input3; // GBuffer2
+Texture2D<half4> tex_Input4; // GBuffer3
 
 // Output textures
-RWTexture2D<float4> tex_Output1; // GBuffer0
-RWTexture2D<float4> tex_Output2; // GBuffer1
-RWTexture2D<float4> tex_Output3; // GBuffer2
-RWTexture2D<float4> tex_Output4; // GBuffer3
+RWTexture2D<half4> tex_Output1; // GBuffer0
+RWTexture2D<half4> tex_Output2; // GBuffer1
+RWTexture2D<half4> tex_Output3; // GBuffer2
+RWTexture2D<half4> tex_Output4; // GBuffer3
 RWTexture2D<half4> tex_Output6; // DepthNormals
 RWTexture2D<half4> tex_Output7; // MotionVectors
 
@@ -18,31 +26,41 @@ RWTexture2D<half4> tex_Output7; // MotionVectors
 Texture2D<half4> _CameraDepthNormalsTexture;
 Texture2D<half4> _CameraMotionVectorsTexture;
 
+// Samplers
+SamplerState src_point_clamp;
+//SamplerState src_linear_clamp;
+
+
 bool isDeferred;
 bool copyGBuffer3;
-bool flipImage;
+//bool flipImage;
 
-uint input_height;
+uint output_height;
 float renderScale;
+
+uint2 dispatchXY;
 
 
 [numthreads(8,8,1)]
-void CSMain_Resize(uint3 id : SV_DispatchThreadID)
+void CSMain_Resize(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 {
-    uint2 dstCoord = id.xy;
-    uint2 srcCoord = id.xy * renderScale;
-    if (flipImage) dstCoord.y = input_height - dstCoord.y - 1;
+	// Swizzle
+    const float2 swizzleID = ThreadGroupTilingX(uint2(dispatchXY.x, dispatchXY.y), uint2(8, 8), 32, gtid.xy, gid.xy);
 
-    tex_Output6[id.xy] = _CameraDepthNormalsTexture[srcCoord.xy]; // DepthNormals
-    tex_Output7[id.xy] = _CameraMotionVectorsTexture[srcCoord.xy]; // MotionVectors
+    uint2 dstCoord = swizzleID.xy;
+    uint2 srcCoord = swizzleID.xy * renderScale;
+    //if (flipImage) dstCoord.y = output_height - dstCoord.y - 1;
+
+    tex_Output6[dstCoord.xy] = _CameraDepthNormalsTexture[srcCoord.xy]; // DepthNormals
+    tex_Output7[dstCoord.xy] = _CameraMotionVectorsTexture[srcCoord.xy]; // MotionVectors
 
     if (isDeferred)
     {
-        tex_Output1[id.xy] = tex_Input1[srcCoord.xy]; // GBuffer0
-        tex_Output2[id.xy] = tex_Input2[srcCoord.xy]; // GBuffer1
-        tex_Output3[id.xy] = tex_Input3[srcCoord.xy]; // GBuffer2
+        tex_Output1[dstCoord.xy] = tex_Input1[srcCoord.xy]; // GBuffer0
+        tex_Output2[dstCoord.xy] = tex_Input2[srcCoord.xy]; // GBuffer1
+        tex_Output3[dstCoord.xy] = tex_Input3[srcCoord.xy]; // GBuffer2
 
         if (copyGBuffer3)
-            tex_Output4[id.xy] = tex_Input4[srcCoord.xy]; // GBuffer3
+            tex_Output4[dstCoord.xy] = tex_Input4[srcCoord.xy]; // GBuffer3
     }
 }
