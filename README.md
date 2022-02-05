@@ -24,3 +24,7 @@ Generally, you should run expensive effects, such as lighting, shadows, or volum
 The best place to insert Anti-Alisasing is before scaling, as this will reduce artifacts in the final image.
 
 Enjoy using this as an example for integration into your Unity projects!
+
+#### For SRP (Universal Render Pipeline / High Definition Render Pipeline)
+My previous attempt at an SRP compatibile version has been removed, as AMD have provided their own support
+https://gpuopen.com/unity/
