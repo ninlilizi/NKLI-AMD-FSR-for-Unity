@@ -274,6 +274,10 @@ namespace NKLI
                 sRGB = false
             };
 
+            RenderTextureDescriptor rtDescDummy = rtDesc;
+            rtDescDummy.width = 1;
+            rtDescDummy.height = 1;
+
             // Create RTs
             CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, RenderTextureFormat.ARGB2101010);
             CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Raw, format);
@@ -290,10 +294,14 @@ namespace NKLI
                 // DepthNormals
                 if ((((int)render_camera.depthTextureMode >> 1) & 1) == 1)
                     CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_DepthNormals, RenderTextureFormat.ARGBHalf);
+                else
+                    CreateRenderTexture(rtDescDummy, ref RT_FSR_RenderTarget_DepthNormals, RenderTextureFormat.ARGBHalf);
 
                 // MotionVectors
                 if ((((int)render_camera.depthTextureMode >> 2) & 1) == 1)
                     CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_MotionVectors, RenderTextureFormat.ARGBHalf);
+                else
+                    CreateRenderTexture(rtDescDummy, ref RT_FSR_RenderTarget_MotionVectors, RenderTextureFormat.ARGBHalf);
 
                 if (attached_camera.renderingPath != RenderingPath.Forward)
                 {
@@ -307,9 +315,7 @@ namespace NKLI
             if (sharpening && upsample_mode == upsample_modes.FSR) CreateRenderTexture(rtDesc, ref RT_Intermediary, format);
             CreateRenderTexture(rtDesc, ref RT_Output, format);
 
-            rtDesc.width = 1;
-            rtDesc.height = 1;
-            CreateRenderTexture(rtDesc, ref RT_FSR_Dummy, RenderTextureFormat.ARGB32);
+            CreateRenderTexture(rtDescDummy, ref RT_FSR_Dummy, RenderTextureFormat.ARGB32);
         }
 
 
@@ -422,10 +428,10 @@ namespace NKLI
                     render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "isDeferred", 0);
 
                 // DepthNormals
+                render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output6", RT_FSR_RenderTarget_DepthNormals);
                 if ((((int)render_camera.depthTextureMode >> 1) & 1) == 1)
                 {
                     render_camera_buffer_copies.SetComputeIntParams(compute_BufferTransfer, "depth_depthNormals", 1);
-                    render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output6", RT_FSR_RenderTarget_DepthNormals);
                 }
                 else
                 {
@@ -434,10 +440,10 @@ namespace NKLI
                 }
 
                 // MotionVectors
+                render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output7", RT_FSR_RenderTarget_MotionVectors);
                 if ((((int)render_camera.depthTextureMode >> 2) & 1) == 1)
                 {
                     render_camera_buffer_copies.SetComputeIntParams(compute_BufferTransfer, "depth_motionVectors", 1);
-                    render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output7", RT_FSR_RenderTarget_MotionVectors);
                 }
                 else
                 {
