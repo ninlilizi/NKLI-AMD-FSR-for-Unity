@@ -9,6 +9,7 @@ Implimented as an image effect.
 #### Features
 * Forward and Deferred render paths.
 * Compatibility with image effects.
+* Correct HDRI and colour-space handling.
 * CPU Optimized: No garbage generation and a single branch instruction per frame.
 
 #### Image effect compatiblity
