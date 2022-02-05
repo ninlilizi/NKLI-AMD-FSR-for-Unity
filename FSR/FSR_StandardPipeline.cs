@@ -77,7 +77,7 @@ namespace NKLI
         [NonSerialized] private Vector2Int renderDimensions;
 
         // Camera event to attach buffer copy buffer to.
-        private CameraEvent camEvent;
+        [NonSerialized] private CameraEvent camEvent;
 
 
         public enum upsample_modes
@@ -113,32 +113,23 @@ namespace NKLI
             // Cache this
             attached_camera = GetComponent<Camera>();
 
-            SetCameraEventTypes();
-
-            // Remove command buffer if one is left over
-            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
-            {
-                attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
-            }
 
             // Create render camera
             render_camera_gameObject = new GameObject("FSR_Render_Camera");
             render_camera_gameObject.transform.parent = transform;
             render_camera_gameObject.transform.localPosition = Vector3.zero;
             render_camera_gameObject.transform.localRotation = Quaternion.identity;
-            render_camera_gameObject.hideFlags = HideFlags.DontSave;
+            render_camera_gameObject.hideFlags = HideFlags.HideAndDontSave;
             render_camera = render_camera_gameObject.AddComponent<Camera>();
             render_camera.gameObject.SetActive(true);
 
             // Add command buffer to render camera
             render_camera_buffer_copies = new CommandBuffer();
             render_camera_buffer_copies.name = "FSR Buffer transfer";
-            render_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
 
             // Add command buffer to attached camera.
             attached_camera_buffer_copies = new CommandBuffer();
             attached_camera_buffer_copies.name = "FSR Buffer transfer";
-            attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
 
             OnRenderImageBuffer = new CommandBuffer();
             OnRenderImageBuffer.name = "OnRenderImage()";
@@ -159,6 +150,37 @@ namespace NKLI
             else camEvent = CameraEvent.AfterDepthNormalsTexture;
         }
 
+
+        /// <summary>
+        /// Removes commend buffers from camera events
+        /// </summary>
+        private void RemoveCameraEvents()
+        {
+            RemoveCameraEvent(render_camera, CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
+
+            RemoveCameraEvent(attached_camera, CameraEvent.AfterDepthNormalsTexture, attached_camera_buffer_copies);
+            RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies);
+        }
+
+
+        /// <summary>
+        /// Removes command buffer from a specific camera event
+        /// </summary>
+        /// <param name="cam"></param>
+        /// <param name="camEvent"></param>
+        /// <param name="buffer"></param>
+        private void RemoveCameraEvent(Camera cam, CameraEvent camEvent, CommandBuffer buffer)
+        {
+            if (cam != null)
+            {
+                if ((new List<CommandBuffer>(cam.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
+                {
+                    cam.RemoveCommandBuffer(camEvent, buffer);
+                }
+            }
+        }
+
+
         private void OnDisable()
         {
             // Destroy render camera
@@ -168,10 +190,7 @@ namespace NKLI
             DestroyAllRenderTextures();
 
             // Remove command buffer
-            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
-            {
-                attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
-            }
+            RemoveCameraEvents();
 
             initlised = false;
         }
@@ -242,6 +261,7 @@ namespace NKLI
             DestroyRenderTexture(ref RT_Intermediary);
             DestroyRenderTexture(ref RT_Output);
         }
+
 
         /// <summary>
         /// Destroys a RenderTexture
@@ -314,6 +334,8 @@ namespace NKLI
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output3", RT_FSR_RenderTarget_gGBuffer2);
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output4", RT_FSR_RenderTarget_gGBuffer3);
                 }
+                else
+                    render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "isDeferred", 0);
 
                 render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output6", RT_FSR_RenderTarget_DepthNormals);
                 render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output7", RT_FSR_RenderTarget_MotionVectors);
@@ -390,7 +412,7 @@ namespace NKLI
         }
 
 
-                /// <summary>
+        /// <summary>
         /// Rebuild all proxy execution queues
         /// </summary>
         private void RebuildExecutionQueues()
@@ -439,6 +461,7 @@ namespace NKLI
             }
         }
 
+
         /// <summary>
         /// Build proxy OnRenderImage queue
         /// </summary>
@@ -478,7 +501,6 @@ namespace NKLI
 
                 OnValidate();
             }
-
         }
 
 
@@ -490,7 +512,13 @@ namespace NKLI
             // Race-condition sanity check
             if (!initlised) return;
 
+            // Setup camera events
+            RemoveCameraEvents();
             SetCameraEventTypes();
+            attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
+            render_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
+
+
             CreateRenderTextures();
             Create_Command_Buffers();
             RebuildExecutionQueues();
@@ -522,7 +550,6 @@ namespace NKLI
             // Execute proxy queue
             ExecuteStack(stack_PreCull);
         }
-
 
 
         /// <summary>
@@ -560,6 +587,7 @@ namespace NKLI
                 }
             }
         }
+
 
         /// <summary>
         /// Locks the queue and adds the IENumerator to the queue
