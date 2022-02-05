@@ -17,7 +17,7 @@ In most cases you need to check 'Copy Render Buffers' for effects to work correc
 * Maximal compatilibity is provided for effects run before scaling.
 * Limited compatibility is provided for effects run after scaling.
 * To run an effect before scaling, add the effect to the render child. 
-* To run an effect after scaling, add the effect before FSR on the primary camera.
+* To run an effect after scaling, add the effect after FSR on the primary camera.
 
 Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. Final effects such as colourgrading, etc should be run after
 The best place to insert Anti-Alisasing is before scaling, as this will reduce artifacts in the final image.
