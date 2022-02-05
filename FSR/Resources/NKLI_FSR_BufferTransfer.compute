@@ -11,8 +11,8 @@ RWTexture2D<float4> tex_Output1; // GBuffer0
 RWTexture2D<float4> tex_Output2; // GBuffer1
 RWTexture2D<float4> tex_Output3; // GBuffer2
 RWTexture2D<float4> tex_Output4; // GBuffer3
-RWTexture2D<float4> tex_Output6; // DepthNormals
-RWTexture2D<float4> tex_Output7; // MotionVectors
+RWTexture2D<half4> tex_Output6; // DepthNormals
+RWTexture2D<half4> tex_Output7; // MotionVectors
 
 // Globals
 Texture2D<half4> _CameraDepthNormalsTexture;

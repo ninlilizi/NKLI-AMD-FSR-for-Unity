@@ -14,10 +14,10 @@
 //TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.XR;
 
 
 namespace NKLI
@@ -48,27 +48,37 @@ namespace NKLI
         public RenderTexture RT_FSR_RenderTarget_gGBuffer3;
         public RenderTexture RT_FSR_RenderTarget_DepthNormals;
         public RenderTexture RT_FSR_RenderTarget_MotionVectors;
+        public RenderTexture RT_Intermediary;
         public RenderTexture RT_Output;
 
         private CommandBuffer render_camera_buffer_copies;
         private CommandBuffer attached_camera_buffer_copies;
+        private CommandBuffer OnRenderImageBuffer;
+
+        private readonly List<Action> stack_PreCull = new List<Action>();
+        private readonly List<Action> stack_OnRenderImage = new List<Action>();
+
 
         // Cached camera flags
-        private int cached_culling_mask;
-        private CameraClearFlags cached_clear_flags;
+        [NonSerialized] private int cached_culling_mask;
+        [NonSerialized] private CameraClearFlags cached_clear_flags;
 
         // Render scale
         [Range(0.25f, 1)] public float render_scale = 0.75f;
-        private float render_scale_cached;
 
         // Copies render buffers from down-sampled to attached camera
         [Tooltip("Enable this to support post-effects dependant on the deferred and depth buffers")]
         public bool CopyRenderBuffers = true;
-        private bool CopyRenderBuffers_Cached;
 
-        private RenderingPath renderPath_Cached;
+        // Main directional light
+        public Light Light_Directional;
+        [NonSerialized] private bool Light_Directional_Enabled_Cached;
 
-        private CameraEvent camEvent; // Camera event to attach to
+        [NonSerialized] private Vector2Int renderDimensions;
+
+        // Camera event to attach buffer copy buffer to.
+        private CameraEvent camEvent;
+
 
         public enum upsample_modes
         {
@@ -80,6 +90,9 @@ namespace NKLI
 
         public bool sharpening;
         [Range(0, 2)] public float sharpness = 1;
+
+        // Startup race-condition check
+        [NonSerialized] private bool initlised = false;
 
 
         // Start is called before the first frame update
@@ -113,7 +126,7 @@ namespace NKLI
             render_camera_gameObject.transform.parent = transform;
             render_camera_gameObject.transform.localPosition = Vector3.zero;
             render_camera_gameObject.transform.localRotation = Quaternion.identity;
-            render_camera_gameObject.hideFlags = HideFlags.HideAndDontSave;
+            render_camera_gameObject.hideFlags = HideFlags.DontSave;
             render_camera = render_camera_gameObject.AddComponent<Camera>();
             render_camera.gameObject.SetActive(true);
 
@@ -127,9 +140,14 @@ namespace NKLI
             attached_camera_buffer_copies.name = "FSR Buffer transfer";
             attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
 
-            // Create textures
-            CreateRenderTextures();
-            Create_Command_Buffers();
+            OnRenderImageBuffer = new CommandBuffer();
+            OnRenderImageBuffer.name = "OnRenderImage()";
+
+            // race condition sanity flag
+            initlised = true;
+
+            // Create resources
+            OnValidate();
         }
 
 
@@ -147,6 +165,71 @@ namespace NKLI
             DestroyImmediate(render_camera_gameObject);
 
             // Destroy render textures
+            DestroyAllRenderTextures();
+
+            // Remove command buffer
+            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
+            {
+                attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
+            }
+
+            initlised = false;
+        }
+
+
+        /// <summary>
+        /// Creates render textures
+        /// </summary>
+        private void CreateRenderTextures()
+        {
+            // Destroy render textures
+            DestroyAllRenderTextures();
+
+
+            RenderTextureFormat format = attached_camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
+
+            // Descriptor
+            RenderTextureDescriptor rtDesc = new RenderTextureDescriptor((int)(attached_camera.pixelWidth * render_scale), (int)(attached_camera.pixelHeight * render_scale), format, 32, 1)
+            {
+                dimension = TextureDimension.Tex2D,
+                enableRandomWrite = true,
+                useMipMap = false,
+                sRGB = false
+            };
+
+            // Create RTs
+            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, format);
+            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Raw, format);
+
+            rtDesc.depthBufferBits = 0;
+            rtDesc.width = attached_camera.pixelWidth;
+            rtDesc.height = attached_camera.pixelHeight;
+            if (CopyRenderBuffers)
+            {
+
+                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Depth, RenderTextureFormat.RFloat);
+                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_DepthNormals, RenderTextureFormat.ARGBHalf);
+                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_MotionVectors, RenderTextureFormat.ARGBHalf);
+                if (attached_camera.renderingPath != RenderingPath.Forward)
+                {
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer0, format);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer1, format);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, format);
+                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, format);
+                }
+            }
+
+            if (sharpening && upsample_mode == upsample_modes.FSR) CreateRenderTexture(rtDesc, ref RT_Intermediary, format);
+            CreateRenderTexture(rtDesc, ref RT_Output, format);
+        }
+
+
+        /// <summary>
+        /// Destroys all RenderTextures
+        /// </summary>
+        private void DestroyAllRenderTextures()
+        {
+            // Destroy render textures
             DestroyRenderTexture(ref RT_FSR_RenderTarget);
             DestroyRenderTexture(ref RT_FSR_RenderTarget_Raw);
             DestroyRenderTexture(ref RT_FSR_RenderTarget_Depth);
@@ -156,65 +239,14 @@ namespace NKLI
             DestroyRenderTexture(ref RT_FSR_RenderTarget_gGBuffer3);
             DestroyRenderTexture(ref RT_FSR_RenderTarget_DepthNormals);
             DestroyRenderTexture(ref RT_FSR_RenderTarget_MotionVectors);
+            DestroyRenderTexture(ref RT_Intermediary);
             DestroyRenderTexture(ref RT_Output);
-
-            // Remove command buffers
-            if (render_camera != null)
-            {
-                if ((new List<CommandBuffer>(render_camera.GetCommandBuffers(CameraEvent.BeforeImageEffectsOpaque))).Find(x => x.name == "FSR Buffer transfer") != null)
-                {
-                    render_camera.RemoveCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
-                }
-            }
-
-            if ((new List<CommandBuffer>(attached_camera.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
-            {
-                attached_camera.RemoveCommandBuffer(camEvent, attached_camera_buffer_copies);
-            }
         }
-
 
         /// <summary>
-        /// Creates render textures
+        /// Destroys a RenderTexture
         /// </summary>
-        private void CreateRenderTextures()
-        {
-            RenderTextureFormat format = attached_camera.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
-
-            // Descriptor
-            RenderTextureDescriptor rtDesc = new RenderTextureDescriptor((int)(attached_camera.pixelWidth * render_scale), (int)(attached_camera.pixelHeight * render_scale), format)
-            {
-                dimension = TextureDimension.Tex2D,
-                enableRandomWrite = true,
-                depthBufferBits = 24,
-                volumeDepth = 1,
-                msaaSamples = 1,
-                useMipMap = false,
-                sRGB = false
-            };
-            if (XRSettings.isDeviceActive) rtDesc.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
-
-            // Create RTs
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget, format);
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Raw, format);
-
-            rtDesc.depthBufferBits = 0;
-            rtDesc.width = attached_camera.pixelWidth;
-            rtDesc.height = attached_camera.pixelHeight;
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_Depth, RenderTextureFormat.RFloat);
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_DepthNormals, RenderTextureFormat.ARGBHalf);
-            CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_MotionVectors, RenderTextureFormat.ARGBHalf);
-            if (attached_camera.renderingPath != RenderingPath.Forward)
-            {
-                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer0, format);
-                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer1, format);
-                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, format);
-                CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, format);
-            }
-
-            CreateRenderTexture(rtDesc, ref RT_Output, format);
-        }
-
+        /// <param name="tex"></param>
         private void DestroyRenderTexture(ref RenderTexture tex)
         {
             if (tex != null)
@@ -304,66 +336,30 @@ namespace NKLI
 
             // Dispatch copy from buffers
             render_camera_buffer_copies.DispatchCompute(compute_BufferTransfer, 0, attached_camera.pixelWidth / 8, attached_camera.pixelHeight / 8, 1);
+
+
+            // Build OnRenderImage buffer
+            RebuildImageEffectBuffer();
         }
 
 
-        private void Update()
+        /// <summary>
+        /// Builds post effect buffer executed in OnRenderImage()
+        /// </summary>
+        private void RebuildImageEffectBuffer()
         {
-            // If the render scale has changed we must recreate our textures
-            if (render_scale != render_scale_cached)
-            {
-                render_scale_cached = render_scale;
-                CreateRenderTextures();
-                Create_Command_Buffers();
-            }
+            OnRenderImageBuffer.Clear();
 
-            // Recreate command buffers if the rendering path has changed
-            if (attached_camera.renderingPath != renderPath_Cached || CopyRenderBuffers != CopyRenderBuffers_Cached)
-            {
-                SetCameraEventTypes();
-
-                CopyRenderBuffers_Cached = CopyRenderBuffers;
-                renderPath_Cached = attached_camera.renderingPath;
-                Create_Command_Buffers();
-            }
-        }
-
-
-        private void OnPreCull()
-        {
-            // Clone camera properties
-            render_camera.CopyFrom(attached_camera);
-            render_camera.enabled = false;
-
-            // Set render target
-            render_camera.targetTexture = RT_FSR_RenderTarget_Raw;
-
-            // Cache flags
-            cached_culling_mask = attached_camera.cullingMask;
-            cached_clear_flags = attached_camera.clearFlags;
-
-            // Clear flags
-            attached_camera.cullingMask = 0;
-            attached_camera.clearFlags = CameraClearFlags.Nothing;
-
-            // Render to buffers
-            render_camera.Render();
-
-        }
-
-
-        private void OnRenderImage(RenderTexture src, RenderTexture dest)
-        {
             // Set parameters to shader
-            compute_FSR.SetInt("input_viewport_width", RT_FSR_RenderTarget.width);
-            compute_FSR.SetInt("input_viewport_height", RT_FSR_RenderTarget.height);
-            compute_FSR.SetInt("input_image_width", RT_FSR_RenderTarget.width);
-            compute_FSR.SetInt("input_image_height", RT_FSR_RenderTarget.height);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "input_viewport_width", RT_FSR_RenderTarget.width);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "input_viewport_height", RT_FSR_RenderTarget.height);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "input_image_width", RT_FSR_RenderTarget.width);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "input_image_height", RT_FSR_RenderTarget.height);
 
-            compute_FSR.SetInt("output_image_width", RT_Output.width);
-            compute_FSR.SetInt("output_image_height", RT_Output.height);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "output_image_width", RT_Output.width);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "output_image_height", RT_Output.height);
 
-            compute_FSR.SetInt("upsample_mode", (int)upsample_mode);
+            OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "upsample_mode", (int)upsample_mode);
 
             // Calculate thread counts
             int dispatchX = (RT_Output.width + (16 - 1)) / 16;
@@ -371,56 +367,209 @@ namespace NKLI
 
             if (sharpening && upsample_mode == upsample_modes.FSR)
             {
-                // Create intermediary render texture
-                RenderTextureDescriptor intermdiaryDesc = new RenderTextureDescriptor
-                {
-                    width = RT_Output.width,
-                    height = RT_Output.height,
-                    depthBufferBits = 24,
-                    volumeDepth = 1,
-                    msaaSamples = 1,
-                    dimension = TextureDimension.Tex2D,
-#if UNITY_2019_4_OR_NEWER
-                    graphicsFormat = RT_Output.graphicsFormat,
-#else
-                    colorFormat = RT_Output.format,
-#endif
-                    enableRandomWrite = true,
-                    useMipMap = false
-                };
-                if (XRSettings.isDeviceActive) intermdiaryDesc.vrUsage = XRSettings.eyeTextureDesc.vrUsage;
-                RenderTexture intermediary = RenderTexture.GetTemporary(intermdiaryDesc);
-                intermediary.Create();
-
                 // Upscale
-                compute_FSR.SetInt("upscale_or_sharpen", 1);
-                compute_FSR.SetTexture(0, "InputTexture", RT_FSR_RenderTarget);
-                compute_FSR.SetTexture(0, "OutputTexture", intermediary);
-                compute_FSR.Dispatch(0, dispatchX, dispatchY, 1);
+                OnRenderImageBuffer.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 1);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "InputTexture", RT_FSR_RenderTarget);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "OutputTexture", RT_Intermediary);
+                OnRenderImageBuffer.DispatchCompute(compute_FSR, 0, dispatchX, dispatchY, 1);
 
                 // Sharpen
-                compute_FSR.SetInt("upscale_or_sharpen", 0);
-                compute_FSR.SetFloat("sharpness", 2 - sharpness);
-                compute_FSR.SetTexture(0, "InputTexture", intermediary);
-                compute_FSR.SetTexture(0, "OutputTexture", RT_Output);
-                compute_FSR.Dispatch(0, dispatchX, dispatchY, 1);
-
-                // Dispose
-                intermediary.Release();
+                OnRenderImageBuffer.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 0);
+                OnRenderImageBuffer.SetComputeFloatParam(compute_FSR, "sharpness", 2 - sharpness);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "InputTexture", RT_Intermediary);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "OutputTexture", RT_Output);
+                OnRenderImageBuffer.DispatchCompute(compute_FSR, 0, dispatchX, dispatchY, 1);
             }
             else
             {
-                compute_FSR.SetInt("upscale_or_sharpen", 1);
-                compute_FSR.SetTexture(0, "InputTexture", RT_FSR_RenderTarget);
-                compute_FSR.SetTexture(0, "OutputTexture", RT_Output);
-                compute_FSR.Dispatch(0, dispatchX, dispatchY, 1);
+                OnRenderImageBuffer.SetComputeIntParams(compute_FSR, "upscale_or_sharpen", 1);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "InputTexture", RT_FSR_RenderTarget);
+                OnRenderImageBuffer.SetComputeTextureParam(compute_FSR, 0, "OutputTexture", RT_Output);
+                OnRenderImageBuffer.DispatchCompute(compute_FSR, 0, dispatchX, dispatchY, 1);
+            }
+        }
+
+
+                /// <summary>
+        /// Rebuild all proxy execution queues
+        /// </summary>
+        private void RebuildExecutionQueues()
+        {
+            RebuildQueueOnPreCull();
+            RebuildQueueOnRenderImage();
+        }
+
+
+        /// <summary>
+        /// Build proxy OnPreCull queue
+        /// </summary>
+        private void RebuildQueueOnPreCull()
+        {
+            stack_PreCull.Clear();
+
+            EnqueueStack(stack_PreCull, () =>
+            {
+                // Clone camera properties
+                render_camera.CopyFrom(attached_camera);
+                render_camera.enabled = false;
+
+                // Set render target
+                render_camera.targetTexture = RT_FSR_RenderTarget_Raw;
+
+                // Cache flags
+                cached_culling_mask = attached_camera.cullingMask;
+                cached_clear_flags = attached_camera.clearFlags;
+
+                // Clear flags
+                attached_camera.cullingMask = 0;
+                attached_camera.clearFlags = CameraClearFlags.Nothing;
+
+                // Render to buffers
+                render_camera.Render();
+            });
+
+            // Disable directional light
+            if (Light_Directional != null)
+            {
+                EnqueueStack(stack_PreCull, () =>
+                {
+                    Light_Directional_Enabled_Cached = Light_Directional.enabled;
+                    Light_Directional.enabled = false;
+                });
+            }
+        }
+
+        /// <summary>
+        /// Build proxy OnRenderImage queue
+        /// </summary>
+        private void RebuildQueueOnRenderImage()
+        {
+            // Clear queue
+            stack_OnRenderImage.Clear();
+
+            // Reset directional light state
+            if (Light_Directional != null)
+            {
+                EnqueueStack(stack_OnRenderImage, () => { Light_Directional.enabled = Light_Directional_Enabled_Cached; });
             }
 
-            Graphics.Blit(RT_Output, dest);
+            EnqueueStack(stack_OnRenderImage, () =>
+            {
+                // Execute command buffer
+                Graphics.ExecuteCommandBuffer(OnRenderImageBuffer);
 
-            // Restore camera flags
-            attached_camera.clearFlags = cached_clear_flags;
-            attached_camera.cullingMask = cached_culling_mask;
+                // Restore camera flags
+                attached_camera.clearFlags = cached_clear_flags;
+                attached_camera.cullingMask = cached_culling_mask;
+            });
         }
+
+
+        /// <summary>
+        /// Executes every frame
+        /// </summary>
+        private void Update()
+        {
+            // Detect viewport size changes
+            if (renderDimensions.x != attached_camera.pixelWidth || renderDimensions.y != attached_camera.pixelHeight)
+            {
+                renderDimensions.x = attached_camera.pixelWidth;
+                renderDimensions.y = attached_camera.pixelHeight;
+
+                OnValidate();
+            }
+
+        }
+
+
+        /// <summary>
+        /// Recreates buffers, etc on Validation
+        /// </summary>
+        private void OnValidate()
+        {
+            // Race-condition sanity check
+            if (!initlised) return;
+
+            SetCameraEventTypes();
+            CreateRenderTextures();
+            Create_Command_Buffers();
+            RebuildExecutionQueues();
+
+            // If we don't have a directional light assigned, attempt to find one
+            if (Light_Directional == null)
+            {
+                Light[] lights = FindObjectsOfType<Light>();
+
+                // Using a For versus Foreach, due to generation of less garbage
+                for (int i = 0; i < lights.Length; ++i)
+                {
+                    // If we find a directional light, assign and exit the loop
+                    if (lights[i].type == LightType.Directional)
+                    {
+                        Light_Directional = lights[i];
+                        break;
+                    }
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Executes immediately before culling
+        /// </summary>
+        private void OnPreCull()
+        {
+            // Execute proxy queue
+            ExecuteStack(stack_PreCull);
+        }
+
+
+
+        /// <summary>
+        /// Applies the effect
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="dest"></param>
+        private void OnRenderImage(RenderTexture src, RenderTexture dest)
+        {
+            // Execute proxy queue
+            ExecuteStack(stack_OnRenderImage);
+
+            // Copy output to destination
+            Graphics.Blit(RT_Output, dest);
+        }
+
+
+        #region ExecutionStack
+        /// <summary>
+        /// Execution stack for batching functions, used to avoid conditionals in the render loop
+        /// </summary>
+        [NonSerialized] private int executionStackPosition = 0;
+
+        private void ExecuteStack(List<Action> executionStack)
+        {
+            for (executionStackPosition = 0; executionStackPosition < executionStack.Count; ++executionStackPosition)
+            {
+                try
+                {
+                    executionStack[executionStackPosition].Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError(ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Locks the queue and adds the IENumerator to the queue
+        /// </summary>
+        /// <param name="executionStack"></param>
+        /// <param name="action"></param>
+        private void EnqueueStack(List<Action> executionStack, Action action)
+        {
+            executionStack.Add(action);
+        }
+        #endregion
     }
 }

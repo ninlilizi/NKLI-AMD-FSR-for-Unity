@@ -9,6 +9,7 @@ Implimented as an image effect.
 #### Features
 * Forward and Deferred render paths.
 * Limited support for passsing through buffers to downstream image effects.
+* Optimized: No garbage generation and a single branch instruction per frame.
 
 #### In progress
 * Expanded support for additional types of downstream image effect.
