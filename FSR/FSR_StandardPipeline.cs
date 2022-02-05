@@ -29,8 +29,8 @@ namespace NKLI
     {
         // Cache local camera
         private Camera attached_camera;
-        private Camera render_camera;
-        private GameObject render_camera_gameObject;
+        public Camera render_camera;
+        public GameObject render_camera_gameObject;
 
         // Shaders
         public ComputeShader compute_FSR;
@@ -129,14 +129,33 @@ namespace NKLI
             attached_camera = GetComponent<Camera>();
 
 
-            // Create render camera
-            render_camera_gameObject = new GameObject("FSR_Render_Camera");
-            render_camera_gameObject.transform.parent = transform;
-            render_camera_gameObject.transform.localPosition = Vector3.zero;
-            render_camera_gameObject.transform.localRotation = Quaternion.identity;
-            render_camera_gameObject.hideFlags = HideFlags.HideAndDontSave;
-            render_camera = render_camera_gameObject.AddComponent<Camera>();
-            render_camera.gameObject.SetActive(true);
+            // If we don't have a child assigned
+            if (render_camera == null)
+            {
+                // First attempt to find a disconnected child
+                Camera[] cameras = GetComponentsInChildren<Camera>();
+                foreach (Camera cam in cameras)
+                {
+                    // If we find a child, we assign it
+                    if (cam.name == "FSR_Render_Child")
+                    {
+                        render_camera_gameObject = cam.gameObject;
+                        render_camera = cam;
+                        break;
+                    }
+                }
+
+                // If the camera is not found, then create a new one.
+                if (render_camera == null)
+                {
+                    render_camera_gameObject = new GameObject("FSR_Render_Child");
+                    render_camera_gameObject.transform.parent = transform;
+                    render_camera_gameObject.transform.localPosition = Vector3.zero;
+                    render_camera_gameObject.transform.localRotation = Quaternion.identity;
+                    render_camera = render_camera_gameObject.AddComponent<Camera>();
+                    render_camera.gameObject.SetActive(true);
+                }
+            }
 
             // Add command buffer to render camera
             render_camera_buffer_copies = new CommandBuffer();
@@ -190,7 +209,7 @@ namespace NKLI
         /// </summary>
         private void RemoveCameraEvents()
         {
-            RemoveCameraEvent(render_camera, CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
+            RemoveCameraEvent(render_camera, CameraEvent.AfterEverything, render_camera_buffer_copies);
 
             RemoveCameraEvent(attached_camera, CameraEvent.AfterDepthNormalsTexture, attached_camera_buffer_copies);
             RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies);
@@ -217,9 +236,6 @@ namespace NKLI
 
         private void OnDisable()
         {
-            // Destroy render camera
-            DestroyImmediate(render_camera_gameObject);
-
             // Destroy render textures
             DestroyAllRenderTextures();
 
@@ -565,7 +581,7 @@ namespace NKLI
             RemoveCameraEvents();
             SetCameraEventTypes();
             attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
-            render_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, render_camera_buffer_copies);
+            render_camera.AddCommandBuffer(CameraEvent.AfterEverything, render_camera_buffer_copies);
 
 
             CreateRenderTextures();

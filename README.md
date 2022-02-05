@@ -8,11 +8,18 @@ Implimented as an image effect.
 
 #### Features
 * Forward and Deferred render paths.
-* Limited support for passsing through buffers to downstream image effects.
+* Compatibility with image effects.
 * CPU Optimized: No garbage generation and a single branch instruction per frame.
 
-#### In progress
-* Expanded support for additional types of downstream image effect.
+#### Image effect compatiblity
+A persistent child camera called 'FSR_Render_Child' will be created when you add this effect to your camera.
+In most cases you need to check 'Copy Render Buffers' for effects to work correctly, regardless if executed before or after scaling.
+* Maximal compatilibity is provided for effects run before scaling.
+* Limited compatibility is provided for effects run after scaling.
+* To run an effect before scaling, add the effect to the render child. 
+* To run an effect after scaling, add the effect before FSR on the primary camera.
 
+Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. Final effects such as colourgrading, etc should be run after
+The best place to insert Anti-Alisasing is before scaling, as this will reduce artifacts in the final image.
 
 Enjoy using this as an example for integration into your Unity projects!
