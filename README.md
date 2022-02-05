@@ -27,4 +27,4 @@ Enjoy using this as an example for integration into your Unity projects!
 
 #### For SRP (Universal Render Pipeline / High Definition Render Pipeline)
 My previous attempt at an SRP compatibile version has been removed, as AMD have provided their own support
-https://gpuopen.com/unity/
+* FSR for SRP is here: https://gpuopen.com/unity/
