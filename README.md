@@ -26,6 +26,7 @@ Final effects and anything that introduces grain or distortions should run after
 
 Enjoy using this as an example for integration into your Unity projects!
 
+
 #### For SRP (Universal Render Pipeline / High Definition Render Pipeline)
 My previous attempt at an SRP compatibile version has been removed, as AMD have provided their own support
 * FSR for SRP is here: https://gpuopen.com/unity/
