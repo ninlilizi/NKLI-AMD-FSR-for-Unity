@@ -58,7 +58,8 @@ namespace NKLI
         public RenderTexture RT_Output;
 
         private CommandBuffer render_camera_buffer_copies;
-        private CommandBuffer attached_camera_buffer_copies;
+        private CommandBuffer attached_camera_buffer_copies_gBufffers;
+        private CommandBuffer attached_camera_buffer_copies_Depth;
         private CommandBuffer OnRenderImageBuffer;
 
         private readonly List<Action> stack_PreCull = new List<Action>();
@@ -87,7 +88,8 @@ namespace NKLI
         [NonSerialized] private int cachedDepthTextureMode;
 
         // Camera event to attach buffer copy buffer to.
-        [NonSerialized] private CameraEvent camEvent;
+        [NonSerialized] private CameraEvent camEvent_Depth;
+        [NonSerialized] private CameraEvent camEvent_gBuffers;
 
 
         public enum upsample_modes
@@ -108,8 +110,11 @@ namespace NKLI
         // Start is called before the first frame update
         private void OnEnable()
         {
+#if UNITY_EDITOR
             // Sanity check - Warn if correct component ordering is not detected
             SanityCheckComponentOrder();
+            SanityCheckIncompatibleEffects();
+#endif
 
             // Load voxel insertion shader
             compute_FSR = Resources.Load("NKLI_FSR/FSR") as ComputeShader;
@@ -168,11 +173,14 @@ namespace NKLI
 
             // Add command buffer to render camera
             render_camera_buffer_copies = new CommandBuffer();
-            render_camera_buffer_copies.name = "FSR Buffer transfer";
+            render_camera_buffer_copies.name = "[FSR] Buffer transfer";
 
-            // Add command buffer to attached camera.
-            attached_camera_buffer_copies = new CommandBuffer();
-            attached_camera_buffer_copies.name = "FSR Buffer transfer";
+            // Create command-buffers
+            attached_camera_buffer_copies_gBufffers = new CommandBuffer();
+            attached_camera_buffer_copies_gBufffers.name = "[FSR] G-Buffers transfer";
+
+            attached_camera_buffer_copies_Depth = new CommandBuffer();
+            attached_camera_buffer_copies_Depth.name = "[FSR] D-Buffer transfer";
 
             OnRenderImageBuffer = new CommandBuffer();
             OnRenderImageBuffer.name = "OnRenderImage()";
@@ -200,10 +208,13 @@ namespace NKLI
             initlised = true;
 
             // Create resources
+            validationDelayed = false;
             OnValidate();
         }
 
 
+#region SanitChecks
+#if UNITY_EDITOR
         /// <summary>
         /// Attempts to detect component order and warn if correct order is not detected
         /// </summary>
@@ -259,12 +270,57 @@ namespace NKLI
         }
 
 
+        /// <summary>
+        /// Checks for known incompatible effects attached to the camera
+        /// </summary>
+        private void SanityCheckIncompatibleEffects()
+        {
+            Component[] goComponents = gameObject.GetComponents(typeof(Component));
+
+            string[] componentBlacklist = new string[3];
+            componentBlacklist[0] = "UnityEngine.Rendering.PostProcessing.PostProcessLayer";
+            componentBlacklist[1] = "UnityEngine.Rendering.PostProcessing.PostProcessVolume";
+            componentBlacklist[2] = "UnityEngine.Rendering.PostProcessing.PostProcessDebug";
+
+            // Search components
+            bool incompatibleEffectFound = false;
+            foreach (Component comp in goComponents)
+            {
+                // For each component we compare it against the black-list
+                for (int i = 0; i < componentBlacklist.Length; ++i)
+                {
+                    if (comp.ToString().Contains(componentBlacklist[i]))
+                    {
+                        Debug.Log("[FSR] <WARNING> Effect '" + componentBlacklist[i] + "' is incompatible with post-scaling pass-through." + Environment.NewLine + "Please move this to the 'FSR_Render_Child' child object, so that it may be run before scaling");
+                        incompatibleEffectFound = true;
+                    }
+                }
+            }
+
+            // Log additional, explanatory error. To ensure this receives the developers attention.
+            if (incompatibleEffectFound)
+            {
+                Debug.LogError("[FSR] Effects known to be incompatible with post-scaling pass-through have been detected!" + Environment.NewLine + "Incompatible effects must run before scaling, or unexpected behaviour will occur. Please move these to the 'FSR_Render_Child' child object, so they may run before scaling.");
+            }
+        }
+#endif
+#endregion
+
+
         // Chooses buffer injection point based on render path
         private void SetCameraEventTypes()
         {
             // Set camera event
-            if (attached_camera.renderingPath != RenderingPath.Forward) camEvent = CameraEvent.AfterReflections;
-            else camEvent = CameraEvent.AfterDepthNormalsTexture;
+            if (attached_camera.renderingPath != RenderingPath.Forward)
+            {
+                camEvent_Depth = CameraEvent.BeforeReflections;
+                camEvent_gBuffers = attached_camera.allowHDR ? CameraEvent.AfterReflections : CameraEvent.BeforeLighting;
+            }
+            else
+            {
+                camEvent_Depth = CameraEvent.AfterDepthNormalsTexture;
+                camEvent_gBuffers = CameraEvent.AfterDepthNormalsTexture;
+            }
         }
 
 
@@ -273,10 +329,16 @@ namespace NKLI
         /// </summary>
         private void RemoveCameraEvents()
         {
+            // Render
             RemoveCameraEvent(render_camera, CameraEvent.AfterEverything, render_camera_buffer_copies);
 
-            RemoveCameraEvent(attached_camera, CameraEvent.AfterDepthNormalsTexture, attached_camera_buffer_copies);
-            RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies);
+            // Depth
+            RemoveCameraEvent(attached_camera, CameraEvent.BeforeReflections, attached_camera_buffer_copies_Depth);
+            RemoveCameraEvent(attached_camera, CameraEvent.AfterDepthNormalsTexture, attached_camera_buffer_copies_Depth);
+
+            // gBuffers
+            RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies_gBufffers);
+            RemoveCameraEvent(attached_camera, CameraEvent.BeforeLighting, attached_camera_buffer_copies_gBufffers);
         }
 
 
@@ -288,10 +350,10 @@ namespace NKLI
         /// <param name="buffer"></param>
         private void RemoveCameraEvent(Camera cam, CameraEvent camEvent, CommandBuffer buffer)
         {
-            if (cam != null)
+            if (cam != null && buffer != null)
             {
                 RemoveCameraEventJMP:
-                if ((new List<CommandBuffer>(cam.GetCommandBuffers(camEvent))).Find(x => x.name == "FSR Buffer transfer") != null)
+                if ((new List<CommandBuffer>(cam.GetCommandBuffers(camEvent))).Find(x => x.name == buffer.name) != null)
                 {
                     cam.RemoveCommandBuffer(camEvent, buffer);
                     goto RemoveCameraEventJMP;
@@ -432,7 +494,8 @@ namespace NKLI
         {
             // Fill command buffers
             render_camera_buffer_copies.Clear();
-            attached_camera_buffer_copies.Clear();
+            attached_camera_buffer_copies_gBufffers.Clear();
+            attached_camera_buffer_copies_Depth.Clear();
 
             // Dispatch sizes
             int[] dispatchXY0 = { RT_FSR_RenderTarget_Raw.width / 8, RT_FSR_RenderTarget_Raw.height / 8 };
@@ -509,38 +572,37 @@ namespace NKLI
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "_CameraMotionVectorsTexture", RT_FSR_Dummy);
                 }
 
+                // Dispatch copy from buffers
+                render_camera_buffer_copies.DispatchCompute(compute_BufferTransfer, 0, dispatchXY1[0], dispatchXY1[1], 1);
+
 
                 /// Assign to master
 
                 if (attached_camera.renderingPath != RenderingPath.Forward)
                 {
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraGBufferTexture0", RT_FSR_RenderTarget_gGBuffer0);
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraGBufferTexture1", RT_FSR_RenderTarget_gGBuffer1);
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraGBufferTexture2", RT_FSR_RenderTarget_gGBuffer2);
-                    if (!render_camera.allowHDR) attached_camera_buffer_copies.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
+                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture0", RT_FSR_RenderTarget_gGBuffer0);
+                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture1", RT_FSR_RenderTarget_gGBuffer1);
+                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture2", RT_FSR_RenderTarget_gGBuffer2);
+                    if (!render_camera.allowHDR) attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
                 }
 
                 // Depth
                 if (((int)render_camera.depthTextureMode & 1) == 1)
                 {
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraDepthTexture", RT_FSR_RenderTarget_Depth);
+                    attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraDepthTexture", RT_FSR_RenderTarget_Depth);
                 }
 
                 // DepthNormals
                 if ((((int)render_camera.depthTextureMode >> 1) & 1) == 1)
                 {
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraDepthNormalsTexture", RT_FSR_RenderTarget_DepthNormals);
+                    attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraDepthNormalsTexture", RT_FSR_RenderTarget_DepthNormals);
                 }
 
                 // MotionVectors
                 if ((((int)render_camera.depthTextureMode >> 2) & 1) == 1)
                 {
-                    attached_camera_buffer_copies.SetGlobalTexture("_CameraMotionVectorsTexture", RT_FSR_RenderTarget_MotionVectors);
+                    attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraMotionVectorsTexture", RT_FSR_RenderTarget_MotionVectors);
                 }
-
-
-                // Dispatch copy from buffers
-                render_camera_buffer_copies.DispatchCompute(compute_BufferTransfer, 0, dispatchXY1[0], dispatchXY1[1], 1);
             }
 
             // Build OnRenderImage buffer
@@ -714,10 +776,16 @@ namespace NKLI
         /// <summary>
         /// Recreates buffers, etc on Validation
         /// </summary>
+        private bool validationDelayed = false;
         private void OnValidate()
         {
             // Race-condition sanity check
-            if (!initlised) return;
+            if (validationDelayed) return;
+            if (!initlised)
+            {
+                StartCoroutine(delayedValidationRetry());
+                return;
+            }
 
             // Build queues and buffers
             CreateRenderTextures();
@@ -727,7 +795,8 @@ namespace NKLI
             // Setup camera events
             RemoveCameraEvents();
             SetCameraEventTypes();
-            if (attached_camera_buffer_copies.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent, attached_camera_buffer_copies);
+            if (attached_camera_buffer_copies_Depth.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent_Depth, attached_camera_buffer_copies_Depth);
+            if (attached_camera_buffer_copies_gBufffers.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent_gBuffers, attached_camera_buffer_copies_gBufffers);
             render_camera.AddCommandBuffer(CameraEvent.AfterEverything, render_camera_buffer_copies);
 
             // If we don't have a directional light assigned, attempt to find one
@@ -746,6 +815,20 @@ namespace NKLI
                     }
                 }
             }
+        }
+
+
+        /// <summary>
+        /// Retry OnValidate after delay
+        /// </summary>
+        /// <returns></returns>
+        IEnumerator delayedValidationRetry()
+        {
+            validationDelayed = true;
+            yield return new WaitForSeconds(1);
+
+            validationDelayed = false;
+            OnValidate();
         }
 
 
