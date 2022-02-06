@@ -1,6 +1,6 @@
 # AMD FSR (Fidelity Super Resolution) for Unity.
 
-#### For Standard Pipeline
+### For Standard Pipeline
 Implimented as an image effect.
 * Add FSR_StandardPipeline.cs to your camera.
 * It must be the first effect on the camera.
@@ -24,9 +24,9 @@ Generally, you should run expensive effects, such as lighting, shadows, or volum
 Final effects and anything that introduces grain or distortions should run after.
 * Anti-Alisasing should *always* happen before scaling, as this will reduce artifacts in the final image.
 
-Enjoy using this as an example for integration into your Unity projects!
 
-
-#### For SRP (Universal Render Pipeline / High Definition Render Pipeline)
+### For SRP (URP / HDRP)
 My previous attempt at an SRP compatibile version has been removed, as AMD have provided their own support
 * FSR for SRP is here: https://gpuopen.com/unity/
+
+#### Enjoy using this as an example for integration into your Unity projects!
