@@ -108,6 +108,9 @@ namespace NKLI
         // Start is called before the first frame update
         private void OnEnable()
         {
+            // Sanity check - Warn if correct component ordering is not detected
+            SanityCheckComponentOrder();
+
             // Load voxel insertion shader
             compute_FSR = Resources.Load("NKLI_FSR/FSR") as ComputeShader;
             if (compute_FSR == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR/FSR'");
@@ -198,6 +201,61 @@ namespace NKLI
 
             // Create resources
             OnValidate();
+        }
+
+
+        /// <summary>
+        /// Attempts to detect component order and warn if correct order is not detected
+        /// </summary>
+        private void SanityCheckComponentOrder()
+        {
+            Component[] goComponents = gameObject.GetComponents(typeof(Component));
+
+            string thisComponent = ToString();
+            string[] componentAnticedenceWhitelist = new string[3];
+            componentAnticedenceWhitelist[0] = thisComponent;
+            componentAnticedenceWhitelist[1] = "UnityEngine.AudioListener";
+            componentAnticedenceWhitelist[2] = "FirstPersonFlyingController";
+
+
+            bool containsCamera = false;
+            bool correctComponentOrder = false;
+            foreach (Component comp in goComponents)
+            {
+                // First we find the Camera
+                if (!containsCamera)
+                {
+                    if (comp.ToString().Contains("UnityEngine.Camera"))
+                        containsCamera = true;
+                }
+                else
+                {
+                    // Next we search for a white-listed component
+                    bool whitelistedComponentFound = false;
+                    for (int i = 0; i < componentAnticedenceWhitelist.Length; ++i)
+                    {
+                        if (comp.ToString().Contains(componentAnticedenceWhitelist[i]))
+                        {
+                            whitelistedComponentFound = true;
+                        }
+                    }
+
+                    if (!whitelistedComponentFound)
+                    {
+                        break;
+                    }
+                    else if (comp.ToString().Contains(thisComponent))
+                    {
+                        correctComponentOrder = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!correctComponentOrder)
+            {
+                Debug.Log("[FSR] <WARNING> FSR should be first component after Camera. Current component order may result in incorrect behaviour!");
+            }
         }
 
 
