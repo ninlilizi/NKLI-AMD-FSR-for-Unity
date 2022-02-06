@@ -13,12 +13,14 @@ Implimented as an image effect.
 * CPU Optimized: No garbage generation and minimal branch instructions per frame.
 
 #### Image effect compatiblity
-A persistent child camera called 'FSR_Render_Child' will be created when you add this effect to your camera.
-In some cases you need to check 'Copy Render Buffers' for effects after scaling to work correctly.
 * Maximal compatilibity is provided for effects run before scaling.
 * Limited compatibility is provided for effects run after scaling.
+
+A persistent child called '*FSR_Render_Child*' will be created when you add this effect to your camera.
 * To run an effect before scaling, add the effect to the render child. 
 * To run an effect after scaling, add the effect after FSR on the primary camera.
+
+In some cases you need to check '*Copy Render Buffers*' for effects placed after scaling to work correctly.
 
 Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. 
 Final effects and anything that introduces grain or distortions should run after.
