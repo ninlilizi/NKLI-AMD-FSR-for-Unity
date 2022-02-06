@@ -22,7 +22,7 @@ A persistent child called '*FSR_Render_Child*' will be created when you add this
 
 In some cases you need to check '*Copy Render Buffers*' for effects placed after scaling to work correctly.
 
-Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. 
+Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. Anything that requires access to Light or Shadow maps must run before scaling. Anything that hooks into the render pipeline before *CameraEvent.BeforeLighting*, appears broken, or does not function, will most likely need to run before scaling.
 Final effects and anything that introduces grain or distortions should run after.
 * Anti-Alisasing should *always* happen before scaling, as this will reduce artifacts in the final image.
 
