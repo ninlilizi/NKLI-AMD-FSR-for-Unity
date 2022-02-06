@@ -33,7 +33,9 @@ SamplerState src_point_clamp;
 
 bool isDeferred;
 bool copyGBuffer3;
-//bool flipImage;
+
+bool depth_depthNormals;
+bool depth_motionVectors;
 
 uint output_height;
 float renderScale;
@@ -51,8 +53,8 @@ void CSMain_Resize(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
     uint2 srcCoord = swizzleID.xy * renderScale;
     //if (flipImage) dstCoord.y = output_height - dstCoord.y - 1;
 
-    tex_Output6[dstCoord.xy] = _CameraDepthNormalsTexture[srcCoord.xy]; // DepthNormals
-    tex_Output7[dstCoord.xy] = _CameraMotionVectorsTexture[srcCoord.xy]; // MotionVectors
+    if (depth_depthNormals) tex_Output6[dstCoord.xy] = _CameraDepthNormalsTexture[srcCoord.xy]; // DepthNormals
+    if (depth_motionVectors) tex_Output7[dstCoord.xy] = _CameraMotionVectorsTexture[srcCoord.xy]; // MotionVectors
 
     if (isDeferred)
     {

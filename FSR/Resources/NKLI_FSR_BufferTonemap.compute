@@ -41,6 +41,9 @@ void CSMain_Tonemap(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID)
 	// Apply tone-mapping
     FsrSrtmH(sample.rgb);
 
+    // Clamp
+    sample.rgb = clamp(sample.rgb, (0).xxx, (1).xxx);
+
     // Linear to 10bit Gamma 2.0
     FsrTepdC10H(sample.rgb, noise);
 
