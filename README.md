@@ -20,8 +20,9 @@ In some cases you need to check 'Copy Render Buffers' for effects after scaling 
 * To run an effect before scaling, add the effect to the render child. 
 * To run an effect after scaling, add the effect after FSR on the primary camera.
 
-Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. Final effects and anything that introduces grain or distortions should run after.
-The best place to insert Anti-Alisasing is before scaling, as this will reduce artifacts in the final image.
+Generally, you should run expensive effects, such as lighting, shadows, or volumetrics before scaling. 
+Final effects and anything that introduces grain or distortions should run after.
+* Anti-Alisasing should *always* happen before scaling, as this will reduce artifacts in the final image.
 
 Enjoy using this as an example for integration into your Unity projects!
 
