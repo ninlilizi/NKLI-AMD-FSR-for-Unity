@@ -81,6 +81,21 @@ namespace NKLI
         [Tooltip("Enable this to support post-effects dependant on the deferred and depth buffers")]
         public bool CopyRenderBuffers = false;
 
+        [SerializeField] public enum TransferMode
+        {
+            Assign,
+            Copy
+        }
+
+        // Flags to instead use an expensive final blit pass instead of global assignment
+        [SerializeField] public TransferMode transferMode_gBuffer0;
+        [SerializeField] public TransferMode transferMode_gBuffer1;
+        [SerializeField] public TransferMode transferMode_gBuffer2;
+        [SerializeField] public TransferMode transferMode_gBuffer3;
+        [SerializeField] public TransferMode transferMode_Depth;
+        [SerializeField] public TransferMode transferMode_DepthNormals;
+        [SerializeField] public TransferMode transferMode_MotionVectors;
+
         // Camera Event CommandBuffer handling
         [Tooltip("Controls event buffer order to correct behaviour of other effects that hook early into the pipeline")]
         [SerializeField] public bool ReorderBufferEvents = false;
@@ -602,28 +617,42 @@ namespace NKLI
 
                 if (attached_camera.renderingPath != RenderingPath.Forward)
                 {
-                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture0", RT_FSR_RenderTarget_gGBuffer0);
-                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture1", RT_FSR_RenderTarget_gGBuffer1);
-                    attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture2", RT_FSR_RenderTarget_gGBuffer2);
-                    if (!render_camera.allowHDR) attached_camera_buffer_copies_gBufffer3.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
+                    // 0
+                    if (transferMode_gBuffer0 == TransferMode.Assign) attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture0", RT_FSR_RenderTarget_gGBuffer0);
+                    else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_gGBuffer0, BuiltinRenderTextureType.GBuffer0);
+                    // 1
+                    if (transferMode_gBuffer1 == TransferMode.Assign) attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture1", RT_FSR_RenderTarget_gGBuffer1);
+                    else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_gGBuffer1, BuiltinRenderTextureType.GBuffer1);
+                    // 2
+                    if (transferMode_gBuffer2 == TransferMode.Assign) attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture2", RT_FSR_RenderTarget_gGBuffer2);
+                    else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_gGBuffer2, BuiltinRenderTextureType.GBuffer2);
+                    // 3
+                    if (!render_camera.allowHDR)
+                    {
+                        if (transferMode_gBuffer3 == TransferMode.Assign) attached_camera_buffer_copies_gBufffer3.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
+                        else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_gGBuffer3, BuiltinRenderTextureType.GBuffer3);
+                    }
                 }
 
                 // Depth
                 if (((int)render_camera.depthTextureMode & 1) == 1)
                 {
                     attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraDepthTexture", RT_FSR_RenderTarget_Depth);
+                    if (transferMode_Depth == TransferMode.Copy) {attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_Depth, BuiltinRenderTextureType.ResolvedDepth);}
                 }
 
                 // DepthNormals
                 if ((((int)render_camera.depthTextureMode >> 1) & 1) == 1)
                 {
-                    attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraDepthNormalsTexture", RT_FSR_RenderTarget_DepthNormals);
+                    if (transferMode_DepthNormals == TransferMode.Assign) attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraDepthNormalsTexture", RT_FSR_RenderTarget_DepthNormals);
+                    else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_DepthNormals, BuiltinRenderTextureType.DepthNormals);
                 }
 
                 // MotionVectors
                 if ((((int)render_camera.depthTextureMode >> 2) & 1) == 1)
                 {
-                    attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraMotionVectorsTexture", RT_FSR_RenderTarget_MotionVectors);
+                    if (transferMode_MotionVectors == TransferMode.Assign) attached_camera_buffer_copies_Depth.SetGlobalTexture("_CameraMotionVectorsTexture", RT_FSR_RenderTarget_MotionVectors);
+                    else attached_camera_buffer_copies_gBufffers.Blit(RT_FSR_RenderTarget_MotionVectors, BuiltinRenderTextureType.MotionVectors);
                 }
             }
 
