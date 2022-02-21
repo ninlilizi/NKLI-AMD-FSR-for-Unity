@@ -15,6 +15,8 @@ namespace NKLI
         SerializedProperty m_Sharpening;
         SerializedProperty m_Sharpness;
         SerializedProperty m_CopyBuffers;
+        SerializedProperty m_ReorderEvents;
+        SerializedProperty m_ReorderEffects;
         SerializedProperty m_DirectionalLight;
 
 
@@ -38,6 +40,8 @@ namespace NKLI
 
             EditorGUILayout.Space();
             EditorGUILayout.PropertyField(m_CopyBuffers, new GUIContent(" Copy render buffers"));
+            EditorGUILayout.PropertyField(m_ReorderEvents, new GUIContent(" Force buffer event order"));
+            EditorGUILayout.PropertyField(m_ReorderEffects, new GUIContent(" Force effect event order"));
             EditorGUILayout.PropertyField(m_DirectionalLight, new GUIContent(" Main directional light"));
         }
 
@@ -53,6 +57,8 @@ namespace NKLI
             m_Sharpening = serializedObject.FindProperty("sharpening");
             m_Sharpness = serializedObject.FindProperty("sharpness");
             m_CopyBuffers = serializedObject.FindProperty("CopyRenderBuffers");
+            m_ReorderEvents = serializedObject.FindProperty("ReorderBufferEvents");
+            m_ReorderEffects = serializedObject.FindProperty("ReorderEffectEvents");
             m_DirectionalLight = serializedObject.FindProperty("Light_Directional");
         }
         #endregion

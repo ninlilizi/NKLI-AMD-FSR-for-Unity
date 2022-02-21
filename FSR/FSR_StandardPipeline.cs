@@ -59,6 +59,7 @@ namespace NKLI
 
         private CommandBuffer render_camera_buffer_copies;
         private CommandBuffer attached_camera_buffer_copies_gBufffers;
+        private CommandBuffer attached_camera_buffer_copies_gBufffer3;
         private CommandBuffer attached_camera_buffer_copies_Depth;
         private CommandBuffer OnRenderImageBuffer;
 
@@ -78,7 +79,17 @@ namespace NKLI
 
         // Copies render buffers from down-sampled to attached camera
         [Tooltip("Enable this to support post-effects dependant on the deferred and depth buffers")]
-        public bool CopyRenderBuffers = true;
+        public bool CopyRenderBuffers = false;
+
+        // Camera Event CommandBuffer handling
+        [Tooltip("Controls event buffer order to correct behaviour of other effects that hook early into the pipeline")]
+        [SerializeField] public bool ReorderBufferEvents = false;
+        [Tooltip("Controls effect buffer order to correct behaviour of other effects that hook early into the pipeline")]
+        [SerializeField] public bool ReorderEffectEvents = false;
+
+        [NonSerialized] private CommandBuffer[] attachedCamera_CommandBuffer_Depth;
+        [NonSerialized] private CommandBuffer[] attachedCamera_CommandBuffer_Effect;
+
 
         // Main directional light
         public Light Light_Directional;
@@ -90,6 +101,7 @@ namespace NKLI
         // Camera event to attach buffer copy buffer to.
         [NonSerialized] private CameraEvent camEvent_Depth;
         [NonSerialized] private CameraEvent camEvent_gBuffers;
+        [NonSerialized] private CameraEvent camEvent_gBuffer3;
 
 
         public enum upsample_modes
@@ -118,19 +130,19 @@ namespace NKLI
 
             // Load voxel insertion shader
             compute_FSR = Resources.Load("NKLI_FSR/FSR") as ComputeShader;
-            if (compute_FSR == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR/FSR'");
+            if (compute_FSR == null) throw new Exception("[NDR] failed to load compute shader 'NKLI_FSR/FSR'");
 
             compute_BufferTransfer = Resources.Load("NKLI_FSR_BufferTransfer") as ComputeShader;
-            if (compute_BufferTransfer == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR_BufferTransfer'");
+            if (compute_BufferTransfer == null) throw new Exception("[NDR] failed to load compute shader 'NKLI_FSR_BufferTransfer'");
 
             compute_BufferTonemap = Resources.Load("NKLI_FSR_BufferTonemap") as ComputeShader;
-            if (compute_BufferTransfer == null) throw new Exception("[FSR] failed to load compute shader 'NKLI_FSR_BufferTonemap'");
+            if (compute_BufferTransfer == null) throw new Exception("[NDR] failed to load compute shader 'NKLI_FSR_BufferTonemap'");
 
             shader_BlitDepth = Shader.Find("Hidden/NKLI_FSR_BlitDepth");
-            if (shader_BlitDepth == null) throw new Exception("[FSR] failed to load shader 'Hidden/NKLI_FSR_BlitDepth'");
+            if (shader_BlitDepth == null) throw new Exception("[NDR] failed to load shader 'Hidden/NKLI_FSR_BlitDepth'");
 
             shader_ReverseTonemap = Shader.Find("Hidden/NKLI_FSR_ReverseTonemap");
-            if (shader_ReverseTonemap == null) throw new Exception("[FSR] failed to load shader 'Hidden/NKLI_FSR_ReverseTonemap'");
+            if (shader_ReverseTonemap == null) throw new Exception("[NDR] failed to load shader 'Hidden/NKLI_FSR_ReverseTonemap'");
 
             material_BlitDepth = new Material(shader_BlitDepth);
             material_ReverseTonemap = new Material(shader_ReverseTonemap);
@@ -147,7 +159,7 @@ namespace NKLI
                 foreach (Camera cam in cameras)
                 {
                     // If we find a child, we assign it
-                    if (cam.name == "FSR_Render_Child")
+                    if (cam.name == "NDR_Render_Child")
                     {
                         render_camera_gameObject = cam.gameObject;
                         render_camera = cam;
@@ -158,7 +170,7 @@ namespace NKLI
                 // If the camera is not found, then create a new one.
                 if (render_camera == null)
                 {
-                    render_camera_gameObject = new GameObject("FSR_Render_Child");
+                    render_camera_gameObject = new GameObject("NDR_Render_Child");
                     render_camera_gameObject.transform.parent = transform;
                     render_camera_gameObject.transform.localPosition = Vector3.zero;
                     render_camera_gameObject.transform.localRotation = Quaternion.identity;
@@ -173,17 +185,20 @@ namespace NKLI
 
             // Add command buffer to render camera
             render_camera_buffer_copies = new CommandBuffer();
-            render_camera_buffer_copies.name = "[FSR] Buffer transfer";
+            render_camera_buffer_copies.name = "[NDR] Buffer transfer";
 
             // Create command-buffers
             attached_camera_buffer_copies_gBufffers = new CommandBuffer();
-            attached_camera_buffer_copies_gBufffers.name = "[FSR] G-Buffers transfer";
+            attached_camera_buffer_copies_gBufffers.name = "[NDR] G-Buffers transfer";
+
+            attached_camera_buffer_copies_gBufffer3 = new CommandBuffer();
+            attached_camera_buffer_copies_gBufffer3.name = "[NDR] G-Buffer3 transfer";
 
             attached_camera_buffer_copies_Depth = new CommandBuffer();
-            attached_camera_buffer_copies_Depth.name = "[FSR] D-Buffer transfer";
+            attached_camera_buffer_copies_Depth.name = "[NDR] D-Buffer transfer";
 
             OnRenderImageBuffer = new CommandBuffer();
-            OnRenderImageBuffer.name = "OnRenderImage()";
+            OnRenderImageBuffer.name = "[NDR] Perform upscaling";
 
 
             //Get blue noise textures
@@ -265,7 +280,7 @@ namespace NKLI
 
             if (!correctComponentOrder)
             {
-                Debug.Log("[FSR] <WARNING> FSR should be first component after Camera. Current component order may result in incorrect behaviour!");
+                Debug.Log("[NDR] <WARNING> NDR should be first component after Camera. Current component order may result in incorrect behaviour!");
             }
         }
 
@@ -291,7 +306,7 @@ namespace NKLI
                 {
                     if (comp.ToString().Contains(componentBlacklist[i]))
                     {
-                        Debug.Log("[FSR] <WARNING> Effect '" + componentBlacklist[i] + "' is incompatible with post-scaling pass-through." + Environment.NewLine + "Please move this to the 'FSR_Render_Child' child object, so that it may be run before scaling");
+                        Debug.Log("[NDR] <WARNING> Effect '" + componentBlacklist[i] + "' is incompatible with post-scaling pass-through." + Environment.NewLine + "Please move this to the 'FSR_Render_Child' child object, so that it may be run before scaling");
                         incompatibleEffectFound = true;
                     }
                 }
@@ -300,7 +315,7 @@ namespace NKLI
             // Log additional, explanatory error. To ensure this receives the developers attention.
             if (incompatibleEffectFound)
             {
-                Debug.LogError("[FSR] Effects known to be incompatible with post-scaling pass-through have been detected!" + Environment.NewLine + "Incompatible effects must run before scaling, or unexpected behaviour will occur. Please move these to the 'FSR_Render_Child' child object, so they may run before scaling.");
+                Debug.LogError("[NDR] Effects known to be incompatible with post-scaling pass-through have been detected!" + Environment.NewLine + "Incompatible effects must run before scaling, or unexpected behaviour will occur. Please move these to the 'FSR_Render_Child' child object, so they may run before scaling.");
             }
         }
 #endif
@@ -314,12 +329,14 @@ namespace NKLI
             if (attached_camera.renderingPath != RenderingPath.Forward)
             {
                 camEvent_Depth = CameraEvent.BeforeReflections;
-                camEvent_gBuffers = attached_camera.allowHDR ? CameraEvent.AfterReflections : CameraEvent.BeforeLighting;
+                camEvent_gBuffers = camEvent_Depth;
+                camEvent_gBuffer3 = attached_camera.allowHDR ? CameraEvent.AfterReflections : CameraEvent.BeforeLighting;
             }
             else
             {
                 camEvent_Depth = CameraEvent.AfterDepthNormalsTexture;
-                camEvent_gBuffers = CameraEvent.AfterDepthNormalsTexture;
+                camEvent_gBuffers = camEvent_Depth;
+                camEvent_gBuffer3 = CameraEvent.AfterDepthNormalsTexture;
             }
         }
 
@@ -337,8 +354,12 @@ namespace NKLI
             RemoveCameraEvent(attached_camera, CameraEvent.AfterDepthNormalsTexture, attached_camera_buffer_copies_Depth);
 
             // gBuffers
-            RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies_gBufffers);
-            RemoveCameraEvent(attached_camera, CameraEvent.BeforeLighting, attached_camera_buffer_copies_gBufffers);
+            RemoveCameraEvent(attached_camera, CameraEvent.BeforeReflections, attached_camera_buffer_copies_gBufffers);
+            RemoveCameraEvent(attached_camera, CameraEvent.AfterReflections, attached_camera_buffer_copies_gBufffer3);
+            RemoveCameraEvent(attached_camera, CameraEvent.BeforeLighting, attached_camera_buffer_copies_gBufffer3);
+
+            // Effect
+            RemoveCameraEvent(attached_camera, CameraEvent.BeforeImageEffectsOpaque, OnRenderImageBuffer);
         }
 
 
@@ -428,7 +449,7 @@ namespace NKLI
                     CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer0, RenderTextureFormat.ARGBHalf);
                     CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer1, RenderTextureFormat.ARGB32);
                     CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer2, RenderTextureFormat.ARGB2101010);
-                    CreateRenderTexture(rtDesc, ref RT_FSR_RenderTarget_gGBuffer3, RenderTextureFormat.ARGB2101010);
+                    if (!render_camera.allowHDR) CreateRenderTexture(rtDescDummy, ref RT_FSR_RenderTarget_gGBuffer3, RenderTextureFormat.ARGB2101010);
                 }
             }
 
@@ -495,6 +516,7 @@ namespace NKLI
             // Fill command buffers
             render_camera_buffer_copies.Clear();
             attached_camera_buffer_copies_gBufffers.Clear();
+            attached_camera_buffer_copies_gBufffer3.Clear();
             attached_camera_buffer_copies_Depth.Clear();
 
             // Dispatch sizes
@@ -543,7 +565,7 @@ namespace NKLI
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output1", RT_FSR_RenderTarget_gGBuffer0);
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output2", RT_FSR_RenderTarget_gGBuffer1);
                     render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output3", RT_FSR_RenderTarget_gGBuffer2);
-                    render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output4", RT_FSR_RenderTarget_gGBuffer3);
+                    render_camera_buffer_copies.SetComputeTextureParam(compute_BufferTransfer, 0, "tex_Output4", RT_FSR_Dummy);
                 }
                 else
                     render_camera_buffer_copies.SetComputeIntParam(compute_BufferTransfer, "isDeferred", 0);
@@ -583,7 +605,7 @@ namespace NKLI
                     attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture0", RT_FSR_RenderTarget_gGBuffer0);
                     attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture1", RT_FSR_RenderTarget_gGBuffer1);
                     attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture2", RT_FSR_RenderTarget_gGBuffer2);
-                    if (!render_camera.allowHDR) attached_camera_buffer_copies_gBufffers.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
+                    if (!render_camera.allowHDR) attached_camera_buffer_copies_gBufffer3.SetGlobalTexture("_CameraGBufferTexture3", RT_FSR_RenderTarget_gGBuffer3);
                 }
 
                 // Depth
@@ -627,7 +649,6 @@ namespace NKLI
             OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "output_image_height", RT_Output.height);
 
             OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "upsample_mode", (int)upsample_mode);
-            //OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "HDR", attached_camera.allowHDR? 1 : 0);
             OnRenderImageBuffer.SetComputeIntParam(compute_FSR, "HDR", 0);
 
             // Calculate thread counts
@@ -691,6 +712,25 @@ namespace NKLI
                 });
             }
 
+            // Only do this if we're managing camera event buffers
+            if (ReorderBufferEvents)
+            {
+                EnqueueStack(stack_PreCull, () =>
+                {
+                    InsertReOrderedBufferEvents();
+                });
+            }
+
+            // Only do this if we're managing effect event buffers
+            if (ReorderEffectEvents)
+            {
+                EnqueueStack(stack_PreCull, () =>
+                {
+                    InsertReOderedEffectEvents();
+                });
+            }
+
+            // We always do this
             EnqueueStack(stack_PreCull, () =>
             {
                 // Mux depth texture modes of both cameras
@@ -732,12 +772,78 @@ namespace NKLI
 
 
         /// <summary>
+        /// Inserts the buffer events at the top of the stack
+        /// </summary>
+        private int xBF; // Garbage reduction
+        private void InsertReOrderedBufferEvents()
+        {
+            // Grab existing buffers
+            attachedCamera_CommandBuffer_Depth = attached_camera.GetCommandBuffers(camEvent_Depth);
+
+            // Remove all buffers
+            attached_camera.RemoveCommandBuffers(camEvent_Depth);
+
+            // Add our buffers first
+            attached_camera.AddCommandBuffer(camEvent_Depth, attached_camera_buffer_copies_Depth);
+            attached_camera.AddCommandBuffer(camEvent_gBuffers, attached_camera_buffer_copies_gBufffers);
+
+            // Add the rest
+            for (xBF = 0; xBF < attachedCamera_CommandBuffer_Depth.Length; ++xBF)
+            {
+                attached_camera.AddCommandBuffer(camEvent_Depth, attachedCamera_CommandBuffer_Depth[xBF]);
+            }
+        }
+
+
+        /// <summary>
+        /// Inserts the effect events at the top of the stack
+        /// </summary>
+        private int xEF; // Garbage reduction
+        private void InsertReOderedEffectEvents()
+        {
+            // Grab existing buffers
+            attachedCamera_CommandBuffer_Effect = attached_camera.GetCommandBuffers(CameraEvent.BeforeImageEffectsOpaque);
+
+            // Remove all buffers
+            attached_camera.RemoveCommandBuffers(CameraEvent.BeforeImageEffectsOpaque);
+
+            // Add our buffer first
+            attached_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, OnRenderImageBuffer);
+
+            // Add the rest
+            for (xEF = 0; xEF < attachedCamera_CommandBuffer_Effect.Length; ++xEF)
+            {
+                attached_camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, attachedCamera_CommandBuffer_Effect[xEF]);
+            }
+        }
+
+
+        /// <summary>
         /// Build proxy OnRenderImage queue
         /// </summary>
         private void RebuildQueueOnRenderImage()
         {
             // Clear queue
             stack_OnRenderImage.Clear();
+
+            // Only do this if we're managing camera event buffers
+            if (ReorderBufferEvents)
+            {
+                EnqueueStack(stack_OnRenderImage, () =>
+                {
+                    attached_camera.RemoveCommandBuffer(camEvent_Depth, attached_camera_buffer_copies_Depth);
+                    attached_camera.RemoveCommandBuffer(camEvent_gBuffers, attached_camera_buffer_copies_gBufffers);
+                });
+            }
+
+            // Only do this if we're managing camera effect event buffers
+            if (ReorderEffectEvents)
+            {
+                EnqueueStack(stack_OnRenderImage, () =>
+                {
+                    attached_camera.RemoveCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, OnRenderImageBuffer);
+                });
+            }
 
             // Reset directional light state
             if (Light_Directional != null)
@@ -747,9 +853,6 @@ namespace NKLI
 
             EnqueueStack(stack_OnRenderImage, () =>
             {
-                // Execute command buffer
-                Graphics.ExecuteCommandBuffer(OnRenderImageBuffer);
-
                 // Restore camera flags
                 attached_camera.clearFlags = cached_clear_flags;
                 attached_camera.cullingMask = cached_culling_mask;
@@ -795,8 +898,9 @@ namespace NKLI
             // Setup camera events
             RemoveCameraEvents();
             SetCameraEventTypes();
-            if (attached_camera_buffer_copies_Depth.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent_Depth, attached_camera_buffer_copies_Depth);
-            if (attached_camera_buffer_copies_gBufffers.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent_gBuffers, attached_camera_buffer_copies_gBufffers);
+            if (!ReorderEffectEvents) InsertReOderedEffectEvents();
+            if (!ReorderBufferEvents) InsertReOrderedBufferEvents();
+            if (attached_camera_buffer_copies_gBufffer3.sizeInBytes > 0) attached_camera.AddCommandBuffer(camEvent_gBuffer3, attached_camera_buffer_copies_gBufffer3);
             render_camera.AddCommandBuffer(CameraEvent.AfterEverything, render_camera_buffer_copies);
 
             // If we don't have a directional light assigned, attempt to find one
@@ -847,6 +951,7 @@ namespace NKLI
         /// </summary>
         /// <param name="src"></param>
         /// <param name="dest"></param>
+        [ImageEffectOpaque]
         private void OnRenderImage(RenderTexture src, RenderTexture dest)
         {
             // Execute proxy queue
